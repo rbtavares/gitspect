@@ -140,16 +140,13 @@ private struct FolderRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isExpanded ? "Collapse" : "Expand")
-            Label {
-                // On the text itself, like repo names: the sidebar's label style overrides a font
-                // set on the whole Label.
-                Text(title)
-                    .font(.system(size: 13))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            } icon: {
-                SidebarIcon(systemName: "folder.fill")
-            }
+            // Name only: the chevron marks it as a folder. Set on the text itself, like repo names,
+            // since small sidebar rows shrink text to 11pt.
+            Text(title)
+                .font(.system(size: 13))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.leading, 4)
             Spacer(minLength: 0)
         }
         .padding(.leading, Self.indent(depth))
@@ -226,7 +223,7 @@ private struct Metric: View {
     }
 }
 
-/// Folder and repo icons at one size and width, so their names line up.
+/// Repo icons at one size and width, so their names line up.
 private struct SidebarIcon: View {
     let systemName: String
 
