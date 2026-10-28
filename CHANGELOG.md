@@ -8,6 +8,29 @@ Each release's section becomes its GitHub release notes, so add an entry before 
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-28
+
+First published release: 0.1.0 was tagged, but its build failed. Everything 0.1.0 lists is here.
+
+### Fixed
+
+- Builds with Xcode 16 (Swift 6.1) again, which the release build uses.
+
+### Included
+
+- Scan one or more folders for git repositories, shown in the sidebar as a tree grouped by parent folder.
+- An overview of every repository when nothing is selected: how many there are, commits to pull and push, and which are local only.
+- Select a folder to see what's in it; remove added folders from GitSpect, or move nested folders to the Trash.
+- Branches and worktrees side by side for each repository, with commits to pull and push.
+- Repositories without a remote are marked as local only; the others link to their remote's web page.
+- Click a branch to open its commit graph beside the repository, together with its upstream's history.
+- Click a commit in the graph to see its full message, author, signature, parents and changed files, with each file's diff a click away.
+- Fetch one repository or all of them in parallel, fast-forward pull, and push.
+- Pull All fast-forwards every branch that is behind its upstream, across all repositories; a repository's pull and push counts in the sidebar do the same for that repository.
+- Select rows like a list and delete their branches, their worktrees, or both, with a confirmation before anything is forced.
+- Output panel with the live output of every git command GitSpect runs.
+- Settings for scanned folders, light/dark/system theme and the app icon.
+
 ## [0.1.0] - 2026-10-28
 
 First release.
