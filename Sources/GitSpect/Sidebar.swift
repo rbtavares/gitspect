@@ -58,7 +58,7 @@ struct Sidebar: View {
                     // folder's chevron sits in the same column as the repo icons.
                     HStack(spacing: 0) {
                         Color.clear.frame(width: FolderRow.chevronWidth)
-                        SidebarRow(repo: repo, isSelected: selection == repo.url)
+                        SidebarRow(repo: repo)
                     }
                     .padding(.leading, FolderRow.indent(depth - 1))
                     .frame(minHeight: Self.rowHeight)
@@ -162,7 +162,9 @@ private struct FolderRow: View {
 
 struct SidebarRow: View {
     let repo: Repo
-    let isSelected: Bool
+    /// Raised by the list itself on the selected row, in step with its highlight. (The selection
+    /// binding only catches up after the newly selected repo's detail has rendered.)
+    @Environment(\.backgroundProminence) private var prominence
     @Environment(ScanModel.self) private var model
 
     var body: some View {
@@ -175,7 +177,7 @@ struct SidebarRow: View {
                 Text(repo.name)
                     .font(.system(size: 13))
                     // Quieter than the bold folder names; full strength once selected.
-                    .opacity(isSelected ? 1 : 0.5)
+                    .opacity(prominence == .increased ? 1 : 0.5)
                     .lineLimit(1)
                     .truncationMode(.middle)
             } icon: {
