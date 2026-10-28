@@ -108,8 +108,6 @@ struct ContentView: View {
             .help("git fetch --all --prune in every repo")
             pullAllButton
         }
-        // macOS buttons have a fixed height per size; large gives the labels room above and below.
-        .controlSize(.large)
     }
 
     private var pullAllButton: some View {
@@ -184,6 +182,8 @@ struct ContentView: View {
             SearchField(text: $query, prompt: "Filter repos, branches, worktrees")
             bulkActions
         }
+        // One size for the field and the buttons, so they're the same height.
+        .controlSize(.large)
         .padding(.horizontal, 10)
         .padding(.top, 6)
         .padding(.bottom, 12)

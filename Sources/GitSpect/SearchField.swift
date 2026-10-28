@@ -21,6 +21,17 @@ struct SearchField: NSViewRepresentable {
     func updateNSView(_ field: NSSearchField, context: Context) {
         context.coordinator.text = $text
         if field.stringValue != text { field.stringValue = text }
+        // Follows SwiftUI's .controlSize, so it matches the buttons beside it (28pt at large).
+        let size: NSControl.ControlSize = switch context.environment.controlSize {
+        case .mini: .mini
+        case .small: .small
+        case .large, .extraLarge: .large
+        default: .regular
+        }
+        if field.controlSize != size {
+            field.controlSize = size
+            field.font = .systemFont(ofSize: NSFont.systemFontSize(for: size))
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
