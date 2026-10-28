@@ -314,13 +314,15 @@ private struct RefBadge: View {
                 .font(.system(size: 10, weight: .medium).monospaced())
                 .lineLimit(1)
                 .truncationMode(.middle)
+                // Long names are cut to 160pt; fixedSize below keeps short ones at their own width
+                // instead of stretching to soak up the row's spare space.
+                .frame(maxWidth: 160)
         }
         .foregroundStyle(color)
         .padding(.horizontal, 4)
         .padding(.vertical, 1)
         .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
-        .frame(maxWidth: 160)
-        .fixedSize(horizontal: false, vertical: true)
+        .fixedSize()
         .help(ref.name)
     }
 }
