@@ -110,10 +110,6 @@ struct ContentView: View {
         }
         // macOS buttons have a fixed height per size; large gives the labels room above and below.
         .controlSize(.large)
-        .padding(.horizontal, 10)
-        // Clear of the search field above.
-        .padding(.top, 14)
-        .padding(.bottom, 8)
     }
 
     private var pullAllButton: some View {
@@ -167,7 +163,7 @@ struct ContentView: View {
             }
         }
         .frame(maxHeight: .infinity)
-        .safeAreaInset(edge: .top, spacing: 0) { bulkActions }
+        .safeAreaInset(edge: .top, spacing: 0) { sidebarControls }
         .safeAreaInset(edge: .bottom, spacing: 0) { sidebarBar }
         .toolbar {
             // In the sidebar's part of the toolbar, beside the window buttons. With the sidebar
@@ -180,7 +176,17 @@ struct ContentView: View {
                 }
             }
         }
-        .searchable(text: $query, placement: .sidebar, prompt: "Filter repos, branches, worktrees")
+    }
+
+    /// Search, then the actions on every repo, in a fixed stack above the tree.
+    private var sidebarControls: some View {
+        VStack(spacing: 12) {
+            SearchField(text: $query, prompt: "Filter repos, branches, worktrees")
+            bulkActions
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 6)
+        .padding(.bottom, 12)
     }
 
     private var sidebarTitle: some View {
