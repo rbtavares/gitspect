@@ -57,15 +57,18 @@ extension Repo {
         return result
     }
 
-    /// Branches not checked out in any worktree, in display order.
-    var deletableBranches: [String] {
-        pairs.compactMap { $0.worktree == nil ? $0.branch : nil }
+    /// What deleting a row removes: a branch on its own, or a linked worktree together with its
+    /// branch. Nil for the main checkout, which can't be removed.
+    func rowItem(_ pair: CheckoutPair) -> Selectable? {
+        if let worktree = pair.worktree {
+            return worktree.isMain ? nil : .worktree(repo: url, path: worktree.path)
+        }
+        guard let branch = pair.branch, branches.contains(branch) else { return nil }
+        return .branch(repo: url, name: branch)
     }
 
-    /// Linked worktrees (the main checkout can't be removed), in display order.
-    var removableWorktrees: [Worktree] {
-        pairs.compactMap { $0.worktree?.isMain == false ? $0.worktree : nil }
-    }
+    /// Deletable rows in display order.
+    var selectableRows: [Selectable] { pairs.compactMap(rowItem) }
 
     func matches(_ query: String) -> Bool {
         relativePath.localizedCaseInsensitiveContains(query)

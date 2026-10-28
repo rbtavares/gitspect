@@ -48,17 +48,8 @@ struct ContentView: View {
             presenting: model.deletionRequest
         ) { request in
             let items = sorted(request.items)
-            if request.force {
-                Button("Force Delete", role: .destructive) { runDeletion(items, force: true, alsoBranches: request.alsoBranches) }
-            } else {
-                Button(items.contains { !$0.isWorktree } ? "Delete" : "Remove", role: .destructive) {
-                    runDeletion(items, force: false, alsoBranches: false)
-                }
-                if items.contains(where: worktreeHasBranch) {
-                    Button("Remove Worktrees and Their Branches", role: .destructive) {
-                        runDeletion(items, force: false, alsoBranches: true)
-                    }
-                }
+            Button(request.force ? "Force Delete" : model.deleteTitle(for: items), role: .destructive) {
+                runDeletion(items, force: request.force)
             }
         } message: { request in
             Text(dialogMessage(request))
@@ -150,7 +141,8 @@ struct ContentView: View {
             RepoDetail(repo: repo)
                 .overlay(alignment: .bottom) {
                     if !model.selection.isEmpty {
-                        SelectionBar(selection: model.selection, isBusy: !model.running.isEmpty) {
+                        SelectionBar(summary: countPhrase(Array(model.selection)) + " selected",
+                                     isBusy: !model.running.isEmpty) {
                             model.requestDeletion(Array(model.selection))
                         } clear: {
                             model.clearSelection()
@@ -168,20 +160,22 @@ struct ContentView: View {
 
     // MARK: - Deletion dialog
 
-    private func runDeletion(_ items: [Selectable], force: Bool, alsoBranches: Bool) {
-        Task { await model.delete(items, force: force, alsoBranches: alsoBranches) }
+    private func runDeletion(_ items: [Selectable], force: Bool) {
+        Task { await model.delete(items, force: force) }
     }
 
     private func dialogTitle(_ request: DeletionRequest) -> String {
         if request.force { return "\(request.items.count) item\(request.items.count == 1 ? " needs" : "s need") force" }
-        let worktrees = request.items.filter(\.isWorktree).count
-        let branches = request.items.count - worktrees
-        let parts = [
-            branches > 0 ? "delete \(branches) branch\(branches == 1 ? "" : "es")" : nil,
-            worktrees > 0 ? "remove \(worktrees) worktree\(worktrees == 1 ? "" : "s")" : nil,
-        ].compactMap { $0 }
-        let title = parts.joined(separator: " and ")
-        return title.prefix(1).uppercased() + title.dropFirst() + "?"
+        return "Delete " + countPhrase(request.items) + "?"
+    }
+
+    /// "2 branches and 1 worktree".
+    private func countPhrase(_ items: [Selectable]) -> String {
+        let (branches, worktrees) = model.deletionCounts(items)
+        return [
+            branches > 0 ? "\(branches) branch\(branches == 1 ? "" : "es")" : nil,
+            worktrees > 0 ? "\(worktrees) worktree\(worktrees == 1 ? "" : "s")" : nil,
+        ].compactMap { $0 }.joined(separator: " and ")
     }
 
     private func dialogMessage(_ request: DeletionRequest) -> String {
@@ -203,16 +197,13 @@ struct ContentView: View {
 
     private func describe(_ item: Selectable) -> String {
         switch item {
-        case .branch(let repo, let name): "\(repo.lastPathComponent): \(name)"
-        case .worktree(let repo, let path): "\(repo.lastPathComponent): worktree \(URL(fileURLWithPath: path).lastPathComponent)"
+        case .branch(let repo, let name):
+            return "\(repo.lastPathComponent): \(name)"
+        case .worktree(let repo, let path):
+            let name = URL(fileURLWithPath: path).lastPathComponent
+            let branch = model.repos.first { $0.url == repo }?.worktrees.first { $0.path == path }?.branch
+            return "\(repo.lastPathComponent): \(branch.map { "\($0) + " } ?? "")worktree \(name)"
         }
-    }
-
-    private func worktreeHasBranch(_ item: Selectable) -> Bool {
-        guard case .worktree(let repoURL, let path) = item,
-              let worktree = model.repos.first(where: { $0.url == repoURL })?.worktrees.first(where: { $0.path == path })
-        else { return false }
-        return worktree.branch != nil
     }
 
     private func sorted(_ items: [Selectable]) -> [Selectable] {
@@ -254,7 +245,7 @@ extension ScanModel {
 
 /// Floating action bar for the current selection.
 private struct SelectionBar: View {
-    let selection: Set<Selectable>
+    let summary: String
     let isBusy: Bool
     let delete: () -> Void
     let clear: () -> Void
@@ -277,15 +268,5 @@ private struct SelectionBar: View {
         .background(.regularMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
-    }
-
-    private var summary: String {
-        let worktrees = selection.filter(\.isWorktree).count
-        let branches = selection.count - worktrees
-        let parts = [
-            branches > 0 ? "\(branches) branch\(branches == 1 ? "" : "es")" : nil,
-            worktrees > 0 ? "\(worktrees) worktree\(worktrees == 1 ? "" : "s")" : nil,
-        ].compactMap { $0 }
-        return parts.joined(separator: " · ") + " selected"
     }
 }

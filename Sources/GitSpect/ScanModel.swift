@@ -9,7 +9,8 @@ enum RepoOperation: Hashable, Sendable {
     case removeWorktree(path: String)
 }
 
-/// Something the user can select and delete: a local branch or a linked worktree.
+/// A row the user can select and delete: a local branch on its own, or a linked worktree
+/// (deleting it removes the worktree, then the branch it has checked out).
 enum Selectable: Hashable, Sendable {
     case branch(repo: URL, name: String)
     case worktree(repo: URL, path: String)
@@ -51,8 +52,6 @@ struct DeletionRequest: Identifiable {
     let items: [Selectable]
     /// A retry of items git refused; confirming passes `--force` / `-D`.
     let force: Bool
-    /// Also delete the branches of removed worktrees.
-    let alsoBranches: Bool
 }
 
 @Observable
@@ -223,26 +222,52 @@ final class ScanModel {
     // MARK: - Deletion
 
     func requestDeletion(_ items: [Selectable]) {
-        deletionRequest = DeletionRequest(items: items, force: false, alsoBranches: false)
+        deletionRequest = DeletionRequest(items: items, force: false)
     }
 
     /// Repos are processed in parallel; git can't safely run two commands on one repo at once,
     /// so each repo's items run in order. Items git refuses without force (dirty worktrees,
     /// unmerged branches) come back as a new request for the user to confirm.
-    func delete(_ items: [Selectable], force: Bool, alsoBranches: Bool) async {
+    func delete(_ items: [Selectable], force: Bool) async {
         let byRepo = Array(Dictionary(grouping: items, by: \.repo).values)
         let refused = await forEach(byRepo) { items in
-            await self.deleteInRepo(items, force: force, alsoBranches: alsoBranches)
+            await self.deleteInRepo(items, force: force)
         }.flatMap { $0 }
 
         if !refused.isEmpty {
-            deletionRequest = DeletionRequest(items: refused, force: true, alsoBranches: alsoBranches)
+            deletionRequest = DeletionRequest(items: refused, force: true)
+        }
+    }
+
+    /// What deleting `items` removes: branches (on their own or checked out in a worktree) and worktrees.
+    func deletionCounts(_ items: [Selectable]) -> (branches: Int, worktrees: Int) {
+        var branches = 0, worktrees = 0
+        for item in items {
+            switch item {
+            case .branch: branches += 1
+            case .worktree(let repoURL, let path):
+                worktrees += 1
+                if repo(repoURL)?.worktrees.first(where: { $0.path == path })?.branch != nil { branches += 1 }
+            }
+        }
+        return (branches, worktrees)
+    }
+
+    /// "Delete Branch", "Delete Branches and Worktrees", and so on.
+    func deleteTitle(for items: [Selectable]) -> String {
+        let (branches, worktrees) = deletionCounts(items)
+        let branchWord = branches == 1 ? "Branch" : "Branches"
+        let worktreeWord = worktrees == 1 ? "Worktree" : "Worktrees"
+        switch (branches > 0, worktrees > 0) {
+        case (true, true): return "Delete \(branchWord) and \(worktreeWord)"
+        case (false, true): return "Delete \(worktreeWord)"
+        default: return "Delete \(branchWord)"
         }
     }
 
     /// Items from a single repo. Worktrees go first so their branches become deletable.
     /// Returns the items git refused without force.
-    private func deleteInRepo(_ items: [Selectable], force: Bool, alsoBranches: Bool) async -> [Selectable] {
+    private func deleteInRepo(_ items: [Selectable], force: Bool) async -> [Selectable] {
         var refused: [Selectable] = []
         var branches: [(item: Selectable, force: Bool)] = []
 
@@ -254,7 +279,8 @@ final class ScanModel {
                 switch await removeWorktree(repo, path: path, force: force) {
                 case .deleted:
                     selection.remove(item)
-                    if alsoBranches, let branch { branches.append((.branch(repo: repoURL, name: branch), false)) }
+                    // Never forced on the first try: an unmerged branch comes back to confirm.
+                    if let branch { branches.append((.branch(repo: repoURL, name: branch), false)) }
                 case .refused: refused.append(item)
                 case .failed: break
                 }
@@ -311,19 +337,16 @@ final class ScanModel {
 
     enum SelectMode { case toggle, extend }
 
-    /// ⌘-click toggles an item; ⇧-click extends a range of the same kind within one repo.
+    /// ⌘-click toggles a row; ⇧-click extends a range of rows within one repo.
     func select(_ item: Selectable, mode: SelectMode) {
         switch mode {
         case .toggle:
             if selection.remove(item) == nil { selection.insert(item) }
             selectionAnchor = item
         case .extend:
-            guard let anchor = selectionAnchor, anchor.repo == item.repo, anchor.isWorktree == item.isWorktree,
-                  let repo = repo(item.repo)
+            guard let anchor = selectionAnchor, anchor.repo == item.repo, let repo = repo(item.repo)
             else { return select(item, mode: .toggle) }
-            let ordered = item.isWorktree
-                ? repo.removableWorktrees.map { Selectable.worktree(repo: repo.url, path: $0.path) }
-                : repo.deletableBranches.map { Selectable.branch(repo: repo.url, name: $0) }
+            let ordered = repo.selectableRows
             guard let from = ordered.firstIndex(of: anchor), let to = ordered.firstIndex(of: item)
             else { return select(item, mode: .toggle) }
             selection.formUnion(ordered[min(from, to)...max(from, to)])

@@ -164,18 +164,24 @@ struct PairRow: View {
         .frame(height: 22)
         .padding(.leading, 20)
         .background {
-            // A worktree and its branch are one line: the outline marks the row whose graph is open.
+            // A branch and its worktree are one line: selected rows are filled, and the outline
+            // marks the row whose graph is open.
             let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
             shape
-                .fill(isHovered ? Color.secondary.opacity(0.08) : .clear)
+                .fill(isSelected ? Color.accentColor.opacity(isHovered ? 0.28 : 0.2)
+                      : isHovered ? Color.secondary.opacity(0.08) : .clear)
                 .overlay(shape.strokeBorder(Color.accentColor.opacity(isGraphed ? 0.8 : 0), lineWidth: 1))
                 .padding(.leading, 12)
         }
         .contentShape(Rectangle())
-        // Clicks between the cells; cells forward plain clicks here and handle ⌘/⇧ selection.
         .onTapGesture { click() }
         .onHover { hovering in withAnimation(.easeOut(duration: 0.1)) { isHovered = hovering } }
     }
+
+    /// What deleting this row removes; nil for rows that can't be deleted (the main checkout).
+    private var rowItem: Selectable? { repo.rowItem(pair) }
+
+    private var isSelected: Bool { rowItem.map(model.selection.contains) ?? false }
 
     /// The row's branch: the branch itself, or the one its worktree has checked out.
     private var graphTarget: GraphTarget? {
@@ -185,19 +191,29 @@ struct PairRow: View {
 
     private var isGraphed: Bool { graphTarget != nil && model.graphTarget == graphTarget }
 
-    /// A plain click shows or hides the row's graph and, like a list, clears the bulk selection.
+    /// ⌘-click toggles the row in the bulk selection and ⇧-click extends it. A plain click shows or
+    /// hides the row's graph and, like a list, clears the selection.
     private func click() {
+        let flags = NSEvent.modifierFlags
+        if flags.contains(.command) || flags.contains(.shift) {
+            if let rowItem { model.select(rowItem, mode: flags.contains(.shift) ? .extend : .toggle) }
+            return
+        }
         model.clearSelection()
         if let graphTarget { model.toggleGraph(graphTarget) }
     }
 
-    // MARK: Branch side
-
-    /// Branches checked out in a worktree can't be deleted.
-    private var branchItem: Selectable? {
-        guard let branch = pair.branch, pair.worktree == nil, repo.branches.contains(branch) else { return nil }
-        return .branch(repo: repo.url, name: branch)
+    @ViewBuilder private var rowMenu: some View {
+        if let target = graphTarget {
+            Button(model.graphTarget == target ? "Hide Graph" : "Show Graph") { model.toggleGraph(target) }
+        }
+        if let rowItem {
+            Divider()
+            Button(model.deleteTitle(for: [rowItem]) + "…", role: .destructive) { model.requestDeletion([rowItem]) }
+        }
     }
+
+    // MARK: Branch side
 
     // Containers stay unconditional so empty cells still hold their half of the row.
     private var branchCell: some View {
@@ -218,28 +234,16 @@ struct PairRow: View {
                 }
                 Spacer(minLength: 8)
                 SyncStatus(repo: repo, branch: branch)
-                DeleteSlot(item: branchItem, operation: .delete(branch: branch), isVisible: isHovered,
-                           help: "Delete local branch \(branch)")
+                // A row with a worktree has its delete button on the worktree side.
+                DeleteSlot(item: pair.worktree == nil ? rowItem : nil, operation: .delete(branch: branch),
+                           isVisible: isHovered)
             }
         }
-        .selectable(branchItem, isHovered: isHovered, onClick: click)
-        .contextMenu {
-            if let target = graphTarget {
-                Button(model.graphTarget == target ? "Hide Graph" : "Show Graph") { model.toggleGraph(target) }
-            }
-            if let item = branchItem {
-                Divider()
-                Button("Delete Branch…", role: .destructive) { model.requestDeletion([item]) }
-            }
-        }
+        .cellFrame()
+        .contextMenu { rowMenu }
     }
 
     // MARK: Worktree side
-
-    private var worktreeItem: Selectable? {
-        guard let worktree = pair.worktree, !worktree.isMain else { return nil }
-        return .worktree(repo: repo.url, path: worktree.path)
-    }
 
     private var worktreeCell: some View {
         HStack(spacing: 6) {
@@ -265,24 +269,16 @@ struct PairRow: View {
                     .truncationMode(.middle)
                     .layoutPriority(-1)
                 Spacer(minLength: 4)
-                DeleteSlot(item: worktreeItem, operation: .removeWorktree(path: worktree.path), isVisible: isHovered,
-                           help: "Remove worktree \(worktree.name)")
+                DeleteSlot(item: rowItem, operation: .removeWorktree(path: worktree.path), isVisible: isHovered)
             }
         }
         .help(pair.worktree?.path ?? "")
-        .selectable(worktreeItem, isHovered: isHovered, onClick: click)
+        .cellFrame()
         .contextMenu {
             if let worktree = pair.worktree {
-                if let target = graphTarget {
-                    Button(model.graphTarget == target ? "Hide Graph" : "Show Graph") { model.toggleGraph(target) }
-                    Divider()
-                }
                 PathActions(path: worktree.path)
-                if let item = worktreeItem {
-                    Divider()
-                    Button("Remove Worktree…", role: .destructive) { model.requestDeletion([item]) }
-                }
             }
+            rowMenu
         }
     }
 
@@ -399,36 +395,10 @@ private struct PillButtonStyle: ButtonStyle {
     }
 }
 
-/// ⌘-click toggles a cell in the bulk selection and ⇧-click extends it; selected cells get an
-/// accent fill. A plain click is the row's (showing its graph), so it doesn't select.
-private struct SelectableCell: ViewModifier {
-    let item: Selectable?
-    let isHovered: Bool
-    /// Runs on a click without ⌘ or ⇧.
-    let onClick: (() -> Void)?
-    @Environment(ScanModel.self) private var model
-
-    func body(content: Content) -> some View {
-        let isSelected = item.map(model.selection.contains) ?? false
-        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
-        content
-            .padding(.horizontal, 4)
-            .frame(height: 20)
-            .background(Color.accentColor.opacity(isSelected ? (isHovered ? 0.28 : 0.2) : 0), in: shape)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                let flags = NSEvent.modifierFlags
-                let extends = flags.contains(.shift), toggles = flags.contains(.command)
-                guard extends || toggles else { onClick?(); return }
-                guard let item else { return }
-                model.select(item, mode: extends ? .extend : .toggle)
-            }
-    }
-}
-
 private extension View {
-    func selectable(_ item: Selectable?, isHovered: Bool, onClick: (() -> Void)? = nil) -> some View {
-        modifier(SelectableCell(item: item, isHovered: isHovered, onClick: onClick))
+    /// The padding and height every cell shares.
+    func cellFrame() -> some View {
+        padding(.horizontal, 4).frame(height: 20)
     }
 }
 
@@ -437,7 +407,6 @@ private struct DeleteSlot: View {
     let item: Selectable?
     let operation: RepoOperation
     let isVisible: Bool
-    let help: String
     @Environment(ScanModel.self) private var model
 
     var body: some View {
@@ -452,7 +421,7 @@ private struct DeleteSlot: View {
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .disabled(model.running[item.repo] != nil)
-                    .help(help)
+                    .help(model.deleteTitle(for: [item]))
                 }
             }
         }
