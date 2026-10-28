@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(ScanModel.self) private var model
     @State private var query = ""
     @State private var collapsed: Set<String> = []
+    @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("showsOutput") private var showsOutput = false
     @AppStorage("outputHeight") private var outputHeight = 200.0
@@ -22,7 +23,7 @@ struct ContentView: View {
                         .buttonStyle(.borderedProminent)
                 }
             } else {
-                NavigationSplitView {
+                NavigationSplitView(columnVisibility: $columnVisibility) {
                     sidebar
                         .navigationSplitViewColumnWidth(min: 260, ideal: 320, max: 480)
                 } detail: {
@@ -140,21 +141,28 @@ struct ContentView: View {
         .frame(maxHeight: .infinity)
         .safeAreaInset(edge: .bottom, spacing: 0) { sidebarBar }
         .toolbar {
-            // In the sidebar's part of the toolbar, beside the window buttons.
+            // In the sidebar's part of the toolbar, beside the window buttons. With the sidebar
+            // collapsed it would move in next to the repo title, so it's left out then.
             ToolbarItem {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("GitSpect")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                if columnVisibility != .detailOnly {
+                    sidebarTitle
                 }
-                .padding(.horizontal, 6)
-                .help(model.roots.map(\.path).joined(separator: "\n"))
             }
         }
         .searchable(text: $query, placement: .sidebar, prompt: "Filter repos, branches, worktrees")
+    }
+
+    private var sidebarTitle: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("GitSpect")
+                .font(.system(size: 13, weight: .semibold))
+            Text(subtitle)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 6)
+        .help(model.roots.map(\.path).joined(separator: "\n"))
     }
 
     @ViewBuilder private var detail: some View {
