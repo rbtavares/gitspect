@@ -8,6 +8,7 @@ struct Sidebar: View {
     @Binding var collapsed: Set<String>
     @Environment(ScanModel.self) private var model
     @State private var trashRequest: RepoGroup?
+    @State private var lastSelectionChange = Date.distantPast
 
     static let rowHeight: CGFloat = 22
 
@@ -32,8 +33,8 @@ struct Sidebar: View {
             ForEach(rows) { row in
                 switch row {
                 case .root(let node):
-                    FolderRow(title: node.root.lastPathComponent, depth: 0,
-                              isExpanded: isExpanded(node.root.path)) { toggle(node.root.path) }
+                    FolderRow(title: node.root.lastPathComponent, depth: 0, isExpanded: isExpanded(node.root.path),
+                              toggle: { toggle(node.root.path) }, click: { clicked(node.root) })
                         .help(node.root.path)
                         .tag(node.root)
                         .contextMenu {
@@ -43,8 +44,8 @@ struct Sidebar: View {
                             Button("Remove from GitSpect") { model.remove(root: node.root) }
                         }
                 case .folder(let group):
-                    FolderRow(title: group.path, depth: 1,
-                              isExpanded: isExpanded(group.id)) { toggle(group.id) }
+                    FolderRow(title: group.path, depth: 1, isExpanded: isExpanded(group.id),
+                              toggle: { toggle(group.id) }, click: { clicked(group.url) })
                         .tag(group.url)
                         .contextMenu {
                             if let url = group.url {
@@ -62,12 +63,15 @@ struct Sidebar: View {
                     }
                     .padding(.leading, FolderRow.indent(depth - 1))
                     .frame(minHeight: Self.rowHeight)
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(TapGesture().onEnded { clicked(repo.url) })
                     .tag(repo.url)
 
                 }
             }
         }
         .listStyle(.sidebar)
+        .onChange(of: selection) { lastSelectionChange = .now }
         // Rows set their own (compact) height.
         .environment(\.defaultMinListRowHeight, 1)
         .confirmationDialog(
@@ -101,6 +105,13 @@ struct Sidebar: View {
         return rows
     }
 
+    /// Clicking the selected repo or folder again deselects it. The list selects on mouse-down,
+    /// before the click ends, so a selection made just now was this click's, not an earlier one.
+    private func clicked(_ url: URL?) {
+        guard let url, selection == url, Date.now.timeIntervalSince(lastSelectionChange) > 0.5 else { return }
+        selection = nil
+    }
+
     private func moveToTrash(_ group: RepoGroup) {
         guard let url = group.url else { return }
         Task {
@@ -132,6 +143,8 @@ private struct FolderRow: View {
     let depth: Int
     let isExpanded: Bool
     let toggle: () -> Void
+    /// A click on the name (not the chevron).
+    let click: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -147,12 +160,16 @@ private struct FolderRow: View {
             .accessibilityLabel(isExpanded ? "Collapse" : "Expand")
             // Name only: the chevron marks it as a folder. Set on the text itself, like repo names,
             // since small sidebar rows shrink text to 11pt.
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .padding(.leading, 4)
-            Spacer(minLength: 0)
+            HStack(spacing: 0) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.leading, 4)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+            .simultaneousGesture(TapGesture().onEnded(click))
         }
         .padding(.leading, Self.indent(depth))
         .frame(minHeight: Sidebar.rowHeight)
