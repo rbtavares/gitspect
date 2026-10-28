@@ -61,20 +61,31 @@ struct OutputPanel: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 8) {
-                            ForEach(model.log) { LogEntryView(entry: $0).id($0.id) }
+                            ForEach(entries) { LogEntryView(entry: $0).id($0.id) }
                         }
                         .padding(10)
                         Color.clear.frame(height: 1).id("end")
                     }
-                    // Follow new commands and output as they stream in.
-                    .onChange(of: model.log.last?.output.count) { proxy.scrollTo("end", anchor: .bottom) }
+                    // Follow new commands, output and completions as they stream in.
+                    .onChange(of: model.log.reduce(0) { $0 + $1.output.count }) { proxy.scrollTo("end", anchor: .bottom) }
                     .onChange(of: model.log.count) { proxy.scrollTo("end", anchor: .bottom) }
+                    .onChange(of: model.log.filter { $0.status == .running }.count) {
+                        proxy.scrollTo("end", anchor: .bottom)
+                    }
                     .onAppear { proxy.scrollTo("end", anchor: .bottom) }
                 }
             }
         }
         .frame(height: clamped(height))
         .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    /// Finished commands in the order they finished, then the ones still running at the bottom.
+    private var entries: [LogEntry] {
+        let finished = model.log
+            .filter { $0.status != .running }
+            .sorted { ($0.finishedAt ?? $0.startedAt) < ($1.finishedAt ?? $1.startedAt) }
+        return finished + model.log.filter { $0.status == .running }
     }
 
     private func clamped(_ value: Double) -> CGFloat {
