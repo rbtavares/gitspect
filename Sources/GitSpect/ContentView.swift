@@ -66,35 +66,38 @@ struct ContentView: View {
                 if let repo = selectedRepo { RepoTitle(repo: repo) }
             }
             // Flexible space: the app-wide actions sit at the far right, apart from the repo.
+            // Flexible space: the repo's own Fetch sits at the far right.
             ToolbarItem { Spacer() }
-            ToolbarItemGroup {
-                Button(action: model.fetchAll) {
-                    if let progress = model.fetchAllProgress {
-                        Label("Fetching \(progress.done)/\(progress.total)", systemImage: "arrow.down.circle")
-                            .labelStyle(.titleAndIcon)
-                    } else {
-                        Label("Fetch All", systemImage: "arrow.down.circle")
-                            .labelStyle(.titleAndIcon)
-                    }
-                }
-                .disabled(model.repos.isEmpty || model.fetchAllProgress != nil || model.pullAllProgress != nil)
-                .help("git fetch --all --prune in every repo")
-                pullAllButton
+            ToolbarItem {
+                if let repo = selectedRepo { RepoFetchButton(repo: repo) }
             }
         }
+    }
+
+    /// Actions on every repo, under the sidebar's search field.
+    private var bulkActions: some View {
+        HStack(spacing: 6) {
+            Button(action: model.fetchAll) {
+                Label(model.fetchAllProgress.map { "Fetching \($0.done)/\($0.total)" } ?? "Fetch All",
+                      systemImage: "arrow.down.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(model.repos.isEmpty || model.fetchAllProgress != nil || model.pullAllProgress != nil)
+            .help("git fetch --all --prune in every repo")
+            pullAllButton
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
     }
 
     private var pullAllButton: some View {
         let pullable = model.pullableBranches
         let branches = pullable.reduce(0) { $0 + $1.branches.count }
         return Button(action: model.pullAll) {
-            if let progress = model.pullAllProgress {
-                Label("Pulling \(progress.done)/\(progress.total)", systemImage: "arrow.down.to.line.circle")
-                    .labelStyle(.titleAndIcon)
-            } else {
-                Label("Pull All", systemImage: "arrow.down.to.line.circle")
-                    .labelStyle(.titleAndIcon)
-            }
+            Label(model.pullAllProgress.map { "Pulling \($0.done)/\($0.total)" } ?? "Pull All",
+                  systemImage: "arrow.down.to.line.circle")
+                .frame(maxWidth: .infinity)
         }
         .disabled(branches == 0 || model.pullAllProgress != nil || model.fetchAllProgress != nil)
         .help(branches == 0
@@ -139,6 +142,7 @@ struct ContentView: View {
             }
         }
         .frame(maxHeight: .infinity)
+        .safeAreaInset(edge: .top, spacing: 0) { bulkActions }
         .safeAreaInset(edge: .bottom, spacing: 0) { sidebarBar }
         .toolbar {
             // In the sidebar's part of the toolbar, beside the window buttons. With the sidebar

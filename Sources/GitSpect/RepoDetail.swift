@@ -102,7 +102,6 @@ struct RepoTitle: View {
                     remoteBadge
                 }
             }
-            fetchButton
         }
         .padding(.horizontal, 8)
         .contextMenu { PathActions(path: repo.url.path) }
@@ -140,24 +139,28 @@ struct RepoTitle: View {
         }
     }
 
-    @ViewBuilder private var fetchButton: some View {
+}
+
+/// Fetches the selected repo; sits at the trailing end of the toolbar.
+struct RepoFetchButton: View {
+    let repo: Repo
+    @Environment(ScanModel.self) private var model
+
+    var body: some View {
         Button {
             Task { await model.fetch(repo) }
         } label: {
-            HStack(spacing: 4) {
-                if model.running[repo.url] == .fetch {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    Image(systemName: "arrow.down.circle")
-                }
-                Text("Fetch")
+            if model.running[repo.url] == .fetch {
+                Label("Fetching…", systemImage: "arrow.down.circle")
+                    .labelStyle(.titleAndIcon)
+            } else {
+                Label("Fetch", systemImage: "arrow.down.circle")
+                    .labelStyle(.titleAndIcon)
             }
         }
-        .controlSize(.small)
         .disabled(model.running[repo.url] != nil || repo.isLocalOnly)
         .help(repo.isLocalOnly ? "No remote to fetch from" : "git fetch --all --prune")
     }
-
 }
 
 /// Styled like the other pane headers (Output, graph, commit): 11pt semibold, count in grey.
