@@ -13,6 +13,11 @@ struct ContentView: View {
     /// sidebar applies it straight away; re-measured only once the layout has settled, since
     /// mid-animation measurements are stale.
     @State private var expandedTitleShift: CGFloat = 0
+    /// The sidebar header fades out as the sidebar collapses and back in once it has reopened.
+    /// Driven here rather than by appear/disappear, which toolbar items don't reliably get.
+    @State private var showsSidebarTitle = true
+    @State private var sidebarTitleOpacity = 1.0
+    @State private var sidebarTitleTask: Task<Void, Never>?
     @State private var alignTask: Task<Void, Never>?
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("outputHeight") private var outputHeight = 200.0
@@ -87,7 +92,10 @@ struct ContentView: View {
         }
         // Hidden from the toolbar by the window's style (RepoTitle shows instead); still used by the Window menu.
         .navigationTitle(selectedRepo?.name ?? "GitSpect")
-        .onChange(of: columnVisibility) { scheduleTitleAlignment() }
+        .onChange(of: columnVisibility) {
+            scheduleTitleAlignment()
+            fadeSidebarTitle(in: columnVisibility != .detailOnly)
+        }
         .onChange(of: listTextX) { scheduleTitleAlignment() }
         .onChange(of: titleX) { scheduleTitleAlignment() }
         .onChange(of: selectedPath) {
@@ -186,8 +194,8 @@ struct ContentView: View {
             // toolbar items between the sidebar and main toolbar as the sidebar slides, and
             // animating them during that move flashes, so it only fades in once the sidebar is open.
             ToolbarItem {
-                if columnVisibility != .detailOnly {
-                    sidebarTitle.modifier(FadeInOnAppear(delay: Self.sidebarSettleDelay, animated: !reduceMotion))
+                if showsSidebarTitle {
+                    sidebarTitle.opacity(sidebarTitleOpacity)
                 }
             }
         }
@@ -331,6 +339,29 @@ struct ContentView: View {
     /// Roughly how long the sidebar takes to slide in or out.
     private static let sidebarSettleDelay = 0.3
 
+    private func fadeSidebarTitle(in visible: Bool) {
+        sidebarTitleTask?.cancel()
+        guard !reduceMotion else {
+            showsSidebarTitle = visible
+            sidebarTitleOpacity = 1
+            return
+        }
+        sidebarTitleTask = Task {
+            if visible {
+                sidebarTitleOpacity = 0
+                showsSidebarTitle = true
+                try? await Task.sleep(for: .seconds(Self.sidebarSettleDelay))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.2)) { sidebarTitleOpacity = 1 }
+            } else {
+                withAnimation(.easeOut(duration: 0.15)) { sidebarTitleOpacity = 0 }
+                try? await Task.sleep(for: .seconds(0.15))
+                guard !Task.isCancelled else { return }
+                showsSidebarTitle = false
+            }
+        }
+    }
+
     /// How far to move the toolbar's repo title so it lines up with the "Branches" header below.
     /// Where macOS places toolbar items depends on the window (full screen or not, sidebar width),
     /// so both are measured rather than assumed. With the sidebar collapsed the title stays put:
@@ -398,21 +429,6 @@ private struct SelectionBar: View {
         .background(.regularMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
-    }
-}
-
-/// Fades a view in when it appears, after `delay`.
-private struct FadeInOnAppear: ViewModifier {
-    let delay: Double
-    let animated: Bool
-    @State private var isVisible = false
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(isVisible || !animated ? 1 : 0)
-            .onAppear {
-                withAnimation(.easeOut(duration: 0.2).delay(delay)) { isVisible = true }
-            }
     }
 }
 
