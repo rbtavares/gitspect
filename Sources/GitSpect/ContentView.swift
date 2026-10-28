@@ -13,16 +13,6 @@ struct ContentView: View {
     /// sidebar applies it straight away; re-measured only once the layout has settled, since
     /// mid-animation measurements are stale.
     @State private var expandedTitleShift: CGFloat = 0
-    /// The sidebar header fades out as the sidebar collapses and back in once it has reopened.
-    /// Driven here rather than by appear/disappear, which toolbar items don't reliably get.
-    /// Where macOS places the title item with the sidebar collapsed (true) and open (false).
-    @State private var naturalTitleX: [Bool: CGFloat] = [:]
-    /// Extra shift while the sidebar slides: macOS moves the title in one jump, so it's first put
-    /// back where it was, then eased to its new spot alongside the sidebar.
-    @State private var titleGlide: CGFloat = 0
-    @State private var showsSidebarTitle = true
-    @State private var sidebarTitleOpacity = 1.0
-    @State private var sidebarTitleTask: Task<Void, Never>?
     @State private var alignTask: Task<Void, Never>?
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("outputHeight") private var outputHeight = 200.0
@@ -40,7 +30,7 @@ struct ContentView: View {
                         .buttonStyle(.borderedProminent)
                 }
             } else {
-                NavigationSplitView(columnVisibility: Binding(get: { columnVisibility }, set: setColumnVisibility)) {
+                NavigationSplitView(columnVisibility: $columnVisibility) {
                     sidebar
                         .navigationSplitViewColumnWidth(min: 260, ideal: 320, max: 480)
                 } detail: {
@@ -97,16 +87,9 @@ struct ContentView: View {
         }
         // Hidden from the toolbar by the window's style (RepoTitle shows instead); still used by the Window menu.
         .navigationTitle(selectedRepo?.name ?? "GitSpect")
-        .onChange(of: columnVisibility) {
-            scheduleTitleAlignment()
-            fadeSidebarTitle(in: columnVisibility != .detailOnly)
-        }
+        .onChange(of: columnVisibility) { scheduleTitleAlignment() }
         .onChange(of: listTextX) { scheduleTitleAlignment() }
-        .onChange(of: titleX) {
-            // Remember where macOS puts the title in each sidebar state, for gliding between them.
-            if let titleX { naturalTitleX[columnVisibility == .detailOnly] = titleX }
-            scheduleTitleAlignment()
-        }
+        .onChange(of: titleX) { scheduleTitleAlignment() }
         .onChange(of: selectedPath) {
             model.clearSelection()
         }
@@ -114,7 +97,7 @@ struct ContentView: View {
             ToolbarItem(placement: .navigation) {
                 if let repo = selectedRepo {
                     RepoTitle(repo: repo)
-                        .offset(x: titleShift + titleGlide)
+                        .offset(x: titleShift)
                         // Measures where macOS placed the item (the offset only moves the drawing).
                         .background(WindowXReader { titleX = $0 })
                 }
@@ -198,12 +181,10 @@ struct ContentView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { sidebarBar }
         .toolbar {
             // In the sidebar's part of the toolbar, beside the window buttons. With the sidebar
-            // collapsed it would sit next to the repo title, so it's left out then. macOS moves
-            // toolbar items between the sidebar and main toolbar as the sidebar slides, and
-            // animating them during that move flashes, so it only fades in once the sidebar is open.
+            // collapsed it would sit next to the repo title, so it's left out then.
             ToolbarItem {
-                if showsSidebarTitle && columnVisibility != .detailOnly {
-                    sidebarTitle.opacity(sidebarTitleOpacity)
+                if columnVisibility != .detailOnly {
+                    sidebarTitle
                 }
             }
         }
@@ -344,54 +325,6 @@ struct ContentView: View {
         return model.isScanning ? "\(folders) · scanning…" : folders
     }
 
-    /// Roughly how long the sidebar takes to slide in or out.
-    private static let sidebarSettleDelay = 0.3
-
-    /// Collapsing or expanding the sidebar (its button, the menu or a shortcut all come through here).
-    private func setColumnVisibility(_ new: NavigationSplitViewVisibility) {
-        let wasCollapsed = columnVisibility == .detailOnly
-        let willCollapse = new == .detailOnly
-        guard wasCollapsed != willCollapse, !reduceMotion,
-              let from = naturalTitleX[wasCollapsed], let to = naturalTitleX[willCollapse]
-        else {
-            columnVisibility = new
-            return
-        }
-        // Where the title is drawn now, and where it will be drawn once the sidebar has moved.
-        let shown = from + (wasCollapsed ? 0 : expandedTitleShift)
-        let target = to + (willCollapse ? 0 : expandedTitleShift)
-        titleGlide = shown - target
-        columnVisibility = new
-        // On the next frame, once it's drawn back in its old spot, ease it over with the sidebar.
-        DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: Self.sidebarSettleDelay)) { titleGlide = 0 }
-        }
-    }
-
-    private func fadeSidebarTitle(in visible: Bool) {
-        sidebarTitleTask?.cancel()
-        guard !reduceMotion else {
-            showsSidebarTitle = visible
-            sidebarTitleOpacity = 1
-            return
-        }
-        sidebarTitleTask = Task {
-            if visible {
-                // Fades in alongside the sidebar's slide rather than after it.
-                sidebarTitleOpacity = 0
-                showsSidebarTitle = true
-                try? await Task.sleep(for: .seconds(0.05))
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeInOut(duration: Self.sidebarSettleDelay)) { sidebarTitleOpacity = 1 }
-            } else {
-                withAnimation(.easeOut(duration: 0.15)) { sidebarTitleOpacity = 0 }
-                try? await Task.sleep(for: .seconds(0.15))
-                guard !Task.isCancelled else { return }
-                showsSidebarTitle = false
-            }
-        }
-    }
-
     /// How far to move the toolbar's repo title so it lines up with the "Branches" header below.
     /// Where macOS places toolbar items depends on the window (full screen or not, sidebar width),
     /// so both are measured rather than assumed. With the sidebar collapsed the title stays put:
@@ -410,7 +343,7 @@ struct ContentView: View {
             // titleX is the item's own position, without the shift (that only moves the drawing).
             let shift = listTextX - titleX
             guard abs(shift - expandedTitleShift) > 0.5 else { return }
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { expandedTitleShift = shift }
+            expandedTitleShift = shift
         }
     }
 
