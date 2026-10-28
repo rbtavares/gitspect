@@ -5,6 +5,9 @@ import SwiftUI
 struct RepoDetail: View {
     let repo: Repo
     @Environment(ScanModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Share of the width below the header taken by the graph pane; starts as an even split.
+    @AppStorage("graphFraction") private var graphFraction = 0.5
 
     static let columnGap: CGFloat = 28
 
@@ -12,18 +15,35 @@ struct RepoDetail: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
-                    Section {
-                        ForEach(repo.pairs) { PairRow(pair: $0, repo: repo) }
-                    } header: {
-                        columnTitles
+            // The graph pane opens beside the list, below the header.
+            GeometryReader { proxy in
+                HStack(spacing: 0) {
+                    pairList
+                        .frame(maxWidth: .infinity)
+                        // Snap to the new width instead of animating it, so text doesn't reflow mid-motion.
+                        .transaction { $0.animation = nil }
+                    if let target = model.graphTarget, target.repo == repo.url {
+                        GraphPane(target: target, fraction: $graphFraction, totalWidth: proxy.size.width)
+                            .transition(.opacity)
                     }
                 }
-                .padding(.trailing, 12)
-                // Room for the floating selection bar.
-                .padding(.bottom, 64)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: model.graphTarget == nil)
             }
+        }
+    }
+
+    private var pairList: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
+                Section {
+                    ForEach(repo.pairs) { PairRow(pair: $0, repo: repo) }
+                } header: {
+                    columnTitles
+                }
+            }
+            .padding(.trailing, 12)
+            // Room for the floating selection bar.
+            .padding(.bottom, 64)
         }
     }
 

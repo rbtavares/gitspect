@@ -8,8 +8,6 @@ struct ContentView: View {
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("showsOutput") private var showsOutput = false
     @AppStorage("outputHeight") private var outputHeight = 200.0
-    /// Share of the detail width taken by the graph pane; starts as an even split.
-    @AppStorage("graphFraction") private var graphFraction = 0.5
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -32,16 +30,8 @@ struct ContentView: View {
                     // safe area (hiding the repo header) and the drawer's ideal height.
                     GeometryReader { proxy in
                         VStack(spacing: 0) {
-                            HStack(spacing: 0) {
-                                detail
-                                    .frame(maxWidth: .infinity)
-                                if let target = model.graphTarget, target.repo.path == selectedPath {
-                                    GraphPane(target: target, fraction: $graphFraction, totalWidth: proxy.size.width)
-                                        .transition(.move(edge: .trailing))
-                                }
-                            }
-                            .frame(maxHeight: .infinity)
-                            .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: model.graphTarget == nil)
+                            detail
+                                .frame(maxHeight: .infinity)
                             if showsOutput {
                                 OutputPanel(height: $outputHeight, maxHeight: proxy.size.height - 200) {
                                     showsOutput = false
