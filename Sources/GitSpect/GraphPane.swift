@@ -4,8 +4,10 @@ import SwiftUI
 /// Side pane with the commit graph of one branch, merged with its upstream's history.
 struct GraphPane: View {
     let target: GraphTarget
-    @Binding var width: Double
-    let maxWidth: CGFloat
+    /// Share of `totalWidth` the pane takes; kept as a fraction so it scales with the window.
+    @Binding var fraction: Double
+    /// Width shared by the repo view and this pane.
+    let totalWidth: CGFloat
     @Environment(ScanModel.self) private var model
     @State private var rows: [GraphRow] = []
     @State private var laneCount = 1
@@ -13,9 +15,11 @@ struct GraphPane: View {
     @State private var isLoading = false
     @State private var refreshes = 0
     @State private var selectedCommit: String?
-    @State private var dragStart: Double?
+    @State private var dragStart: CGFloat?
 
     static let minWidth: CGFloat = 300
+    /// Room always left for the repo view.
+    static let minDetailWidth: CGFloat = 320
 
     /// Reloads on a new target, a manual refresh, or when a fetch/pull/push moves the branch.
     private struct LoadKey: Hashable {
@@ -35,7 +39,7 @@ struct GraphPane: View {
                 content
             }
         }
-        .frame(width: clamped(width))
+        .frame(width: clamped(totalWidth * fraction))
         .background(Color(nsColor: .textBackgroundColor))
         .task(id: LoadKey(target: target, status: status, refreshes: refreshes)) { await load() }
     }
@@ -53,14 +57,12 @@ struct GraphPane: View {
                     .gesture(
                         DragGesture(coordinateSpace: .global)
                             .onChanged { value in
-                                let start = dragStart ?? width
+                                guard totalWidth > 0 else { return }
+                                let start = dragStart ?? clamped(totalWidth * fraction)
                                 dragStart = start
-                                width = start - value.translation.width
+                                fraction = clamped(start - value.translation.width) / totalWidth
                             }
-                            .onEnded { _ in
-                                width = clamped(width)
-                                dragStart = nil
-                            }
+                            .onEnded { _ in dragStart = nil }
                     )
             }
     }
@@ -151,8 +153,8 @@ struct GraphPane: View {
         }
     }
 
-    private func clamped(_ value: Double) -> CGFloat {
-        min(max(CGFloat(value), Self.minWidth), max(maxWidth, Self.minWidth))
+    private func clamped(_ value: CGFloat) -> CGFloat {
+        min(max(value, Self.minWidth), max(totalWidth - Self.minDetailWidth, Self.minWidth))
     }
 }
 

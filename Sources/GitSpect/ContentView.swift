@@ -8,7 +8,8 @@ struct ContentView: View {
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("showsOutput") private var showsOutput = false
     @AppStorage("outputHeight") private var outputHeight = 200.0
-    @AppStorage("graphWidth") private var graphWidth = 460.0
+    /// Share of the detail width taken by the graph pane; starts as an even split.
+    @AppStorage("graphFraction") private var graphFraction = 0.5
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -35,7 +36,7 @@ struct ContentView: View {
                                 detail
                                     .frame(maxWidth: .infinity)
                                 if let target = model.graphTarget, target.repo.path == selectedPath {
-                                    GraphPane(target: target, width: $graphWidth, maxWidth: proxy.size.width - 320)
+                                    GraphPane(target: target, fraction: $graphFraction, totalWidth: proxy.size.width)
                                         .transition(.move(edge: .trailing))
                                 }
                             }
