@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct ContentView: View {
-    @State private var model = ScanModel()
+    @Environment(ScanModel.self) private var model
     @State private var query = ""
     @State private var collapsed: Set<String> = []
     @AppStorage("selectedRepoPath") private var selectedPath = ""
@@ -63,7 +63,6 @@ struct ContentView: View {
         } message: { request in
             Text(dialogMessage(request))
         }
-        .environment(model)
         .navigationSubtitle(subtitle)
         .onChange(of: selectedPath) { model.clearSelection() }
         .toolbar {
@@ -213,15 +212,20 @@ struct ContentView: View {
         return model.isScanning ? "\(folders) — scanning…" : "\(folders) — \(model.repos.count) repos"
     }
 
-    private func addFolders() {
+    private func addFolders() { model.chooseFoldersToAdd() }
+}
+
+extension ScanModel {
+    /// Asks for folders to scan, starting next to the last one added.
+    func chooseFoldersToAdd() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = true
         panel.prompt = "Add"
-        if let last = model.roots.last { panel.directoryURL = last.deletingLastPathComponent() }
+        if let last = roots.last { panel.directoryURL = last.deletingLastPathComponent() }
         if panel.runModal() == .OK {
-            model.add(roots: panel.urls)
+            add(roots: panel.urls)
         }
     }
 }

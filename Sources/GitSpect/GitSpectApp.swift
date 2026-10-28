@@ -5,10 +5,13 @@ import SwiftUI
 struct GitSpectApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @AppStorage("showsOutput") private var showsOutput = false
+    /// Shared by the main window and Settings (which manages the scanned folders).
+    @State private var model = ScanModel()
 
     var body: some Scene {
         WindowGroup("GitSpect") {
             ContentView()
+                .environment(model)
                 .frame(minWidth: 640, minHeight: 400)
         }
         .commands {
@@ -20,6 +23,7 @@ struct GitSpectApp: App {
         }
         Settings {
             SettingsView()
+                .environment(model)
         }
     }
 }
