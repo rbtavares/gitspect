@@ -104,7 +104,7 @@ private struct FolderRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             } icon: {
-                Image(systemName: "folder.fill")
+                SidebarIcon(systemName: "folder.fill")
             }
             Spacer(minLength: 0)
         }
@@ -135,9 +135,9 @@ struct SidebarRow: View {
             } icon: {
                 // Tinted when the repo has a remote; grey when it exists only on this Mac.
                 if repo.isLocalOnly {
-                    Image(systemName: "book.closed").foregroundStyle(.secondary)
+                    SidebarIcon(systemName: "book.closed").foregroundStyle(.secondary)
                 } else {
-                    Image(systemName: "book.closed")
+                    SidebarIcon(systemName: "book.closed")
                 }
             }
             Spacer(minLength: 4)
@@ -183,5 +183,16 @@ private struct Metric: View {
             .foregroundStyle(color)
             .fixedSize()
         }
+    }
+}
+
+/// Folder and repo icons at one size and width, so their names line up.
+private struct SidebarIcon: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 13))
+            .frame(width: 18)
     }
 }
