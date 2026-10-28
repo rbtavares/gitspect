@@ -14,6 +14,12 @@ struct GraphPane: View {
     @State private var error: String?
     @State private var isLoading = false
     @State private var refreshes = 0
+    /// When the pane appeared. Rows added while it's still sliding in are drawn at their final
+    /// place rather than moving with it, so the first load waits for the slide to finish.
+    @State private var appearedAt = Date.now
+
+    /// The pane's slide-in, set in RepoDetail.
+    static let slideDuration = 0.25
     @State private var selectedCommit: String?
     @State private var scrollTarget: String?
     @State private var dragStart: CGFloat?
@@ -175,6 +181,8 @@ struct GraphPane: View {
             let commits = try await GitGraph.load(repo: target.repo, branch: target.branch,
                                                   upstreamRef: status?.isGone == false ? status?.upstreamRef : nil)
             let laidOut = await Task.detached(priority: .userInitiated) { GitGraph.layout(commits) }.value
+            let sliding = Self.slideDuration - Date.now.timeIntervalSince(appearedAt)
+            if sliding > 0 { try? await Task.sleep(for: .seconds(sliding)) }
             guard !Task.isCancelled else { return }
             rows = laidOut
             laneCount = laidOut.reduce(1) { max($0, $1.lanesIn.count, $1.lanesOut.count, $1.column + 1) }

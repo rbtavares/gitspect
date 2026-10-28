@@ -29,7 +29,7 @@ struct RepoDetail: View {
                     }
                 }
                 .clipped()
-                .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: model.graphTarget == nil)
+                .animation(reduceMotion ? nil : .snappy(duration: GraphPane.slideDuration), value: model.graphTarget == nil)
             }
         }
     }
