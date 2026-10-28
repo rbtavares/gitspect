@@ -1,0 +1,43 @@
+name: Release
+
+# Pushing a version tag (vX.Y.Z, or vX.Y.Z-beta.1 for a pre-release) builds a universal
+# GitSpect.app and publishes it as a GitHub release, with notes from CHANGELOG.md.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # make-app.sh numbers builds by commit count
+
+      - name: Read version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Check CHANGELOG entry
+        run: scripts/changelog-section.sh "$VERSION" > release-notes.md
+
+      - name: Build universal app
+        run: |
+          ARCHS="arm64 x86_64" ./make-app.sh
+          lipo -archs GitSpect.app/Contents/MacOS/GitSpect
+          codesign --verify GitSpect.app
+
+      - name: Package
+        # ditto keeps the bundle's symlinks and extended attributes intact.
+        run: ditto -c -k --keepParent GitSpect.app "GitSpect-$VERSION.zip"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" "GitSpect-$VERSION.zip" \
+            --title "GitSpect $VERSION" --notes-file release-notes.md --verify-tag $prerelease

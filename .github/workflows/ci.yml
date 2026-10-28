@@ -1,0 +1,20 @@
+name: CI
+
+# Checks that the app still builds. Runs on pull requests only: macOS runner minutes are
+# billed at 10x for private repos, and releases build on their own.
+on:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build app
+        run: ./make-app.sh
