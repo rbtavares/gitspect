@@ -28,14 +28,16 @@ struct Sidebar: View {
     }
 
     var body: some View {
-        List(selection: $selection) {
+        // No list selection: macOS draws it blue or grey depending on keyboard focus. Rows are
+        // selected by click and highlighted here, always grey.
+        List {
             ForEach(rows) { row in
                 switch row {
                 case .root(let node):
                     FolderRow(title: node.root.lastPathComponent, depth: 0, isExpanded: isExpanded(node.root.path),
                               toggle: { toggle(node.root.path) }, click: { clicked(node.root) })
                         .help(node.root.path)
-                        .tag(node.root)
+                        .listRowBackground(highlight(node.root))
                         .contextMenu {
                             PathActions(path: node.root.path)
                             Divider()
@@ -45,7 +47,7 @@ struct Sidebar: View {
                 case .folder(let group):
                     FolderRow(title: group.path, depth: 1, isExpanded: isExpanded(group.id),
                               toggle: { toggle(group.id) }, click: { clicked(group.url) })
-                        .tag(group.url)
+                        .listRowBackground(highlight(group.url))
                         .contextMenu {
                             if let url = group.url {
                                 PathActions(path: url.path)
@@ -58,13 +60,13 @@ struct Sidebar: View {
                     // folder's chevron sits in the same column as the repo icons.
                     HStack(spacing: 0) {
                         Color.clear.frame(width: FolderRow.chevronWidth)
-                        SidebarRow(repo: repo)
+                        SidebarRow(repo: repo, isSelected: selection == repo.url)
                     }
                     .padding(.leading, FolderRow.indent(depth - 1))
                     .frame(minHeight: Self.rowHeight)
                     .contentShape(Rectangle())
                     .onTapGesture { clicked(repo.url) }
-                    .tag(repo.url)
+                    .listRowBackground(highlight(repo.url))
 
                 }
             }
@@ -103,12 +105,19 @@ struct Sidebar: View {
         return rows
     }
 
-    /// Rows handle their own clicks: one selects the row, and clicking the selected row again
-    /// deselects it. (A gesture alongside the list's own click handling stops it selecting at all.)
-    /// The list still draws the highlight and moves the selection with the arrow keys.
+    /// A click selects the row; clicking the selected row again deselects it.
     private func clicked(_ url: URL?) {
         guard let url else { return }
         selection = selection == url ? nil : url
+    }
+
+    /// The selected row's background: a grey rounded highlight inset like the system sidebar's.
+    @ViewBuilder private func highlight(_ url: URL?) -> some View {
+        if let url, selection == url {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.secondary.opacity(0.22))
+                .padding(.horizontal, 10)
+        }
     }
 
     private func moveToTrash(_ group: RepoGroup) {
@@ -178,9 +187,7 @@ private struct FolderRow: View {
 
 struct SidebarRow: View {
     let repo: Repo
-    /// Raised by the list itself on the selected row, in step with its highlight. (The selection
-    /// binding only catches up after the newly selected repo's detail has rendered.)
-    @Environment(\.backgroundProminence) private var prominence
+    let isSelected: Bool
     @Environment(ScanModel.self) private var model
 
     var body: some View {
@@ -193,7 +200,7 @@ struct SidebarRow: View {
                 Text(repo.name)
                     .font(.system(size: 13))
                     // Quieter than the bold folder names; full strength once selected.
-                    .opacity(prominence == .increased ? 1 : 0.5)
+                    .opacity(isSelected ? 1 : 0.5)
                     .lineLimit(1)
                     .truncationMode(.middle)
             } icon: {

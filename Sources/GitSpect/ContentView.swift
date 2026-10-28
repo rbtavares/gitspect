@@ -6,8 +6,8 @@ struct ContentView: View {
     @State private var query = ""
     @State private var collapsed: Set<String> = []
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
-    /// Left edges, in window coordinates, of the detail area and of the toolbar's repo title.
-    @State private var detailX: CGFloat?
+    /// Left edges, in window coordinates, of the list's "Branches" header and the toolbar's repo title.
+    @State private var listTextX: CGFloat?
     @State private var titleX: CGFloat?
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("outputHeight") private var outputHeight = 200.0
@@ -35,7 +35,6 @@ struct ContentView: View {
                         VStack(spacing: 0) {
                             detail
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .background(WindowXReader { detailX = $0 })
                             if model.showsOutput {
                                 OutputPanel(height: $outputHeight, maxHeight: proxy.size.height - 200) {
                                     model.setOutputVisible(false)
@@ -217,7 +216,7 @@ struct ContentView: View {
 
     @ViewBuilder private var detail: some View {
         if let repo = model.repos.first(where: { $0.url.path == selectedPath }) {
-            RepoDetail(repo: repo)
+            RepoDetail(repo: repo) { listTextX = $0 }
                 .overlay(alignment: .bottom) {
                     // Only once something deletable is selected (the main checkout isn't).
                     let deletable = model.deletionItems(model.selection)
@@ -327,13 +326,13 @@ struct ContentView: View {
     /// Roughly how long the sidebar takes to slide in or out.
     private static let sidebarSettleDelay = 0.3
 
-    /// How far to move the toolbar's repo title so it lines up with the "Branches" header below
-    /// (20pt in from the detail area). Where macOS places toolbar items depends on the window
-    /// (full screen or not, sidebar width), so it's measured rather than fixed. With the sidebar
-    /// collapsed the title stays put: lining up would slide it under the sidebar button.
+    /// How far to move the toolbar's repo title so it lines up with the "Branches" header below.
+    /// Where macOS places toolbar items depends on the window (full screen or not, sidebar width),
+    /// so both are measured rather than assumed. With the sidebar collapsed the title stays put:
+    /// lining up would slide it under the sidebar button.
     private var titleShift: CGFloat {
-        guard columnVisibility != .detailOnly, let detailX, let titleX else { return 0 }
-        return detailX + 20 - titleX
+        guard columnVisibility != .detailOnly, let listTextX, let titleX else { return 0 }
+        return listTextX - titleX
     }
 
     private var selectedRepo: Repo? { model.repos.first { $0.url.path == selectedPath } }

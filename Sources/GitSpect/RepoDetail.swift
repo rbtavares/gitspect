@@ -4,6 +4,8 @@ import SwiftUI
 /// The selected repo: branches (left) and worktrees (right), paired row by row.
 struct RepoDetail: View {
     let repo: Repo
+    /// Reports where the list's text starts in the window, for lining up the toolbar title.
+    var onListTextX: (CGFloat) -> Void = { _ in }
     @Environment(ScanModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Share of the width below the header taken by the graph pane; starts as an even split.
@@ -68,6 +70,8 @@ struct RepoDetail: View {
     private var columnTitles: some View {
         HStack(spacing: 0) {
             ColumnTitle("Branches", count: repo.branches.count)
+                // Where the toolbar's repo title lines up.
+                .background(WindowXReader(onChange: onListTextX))
             Color.clear.frame(width: Self.columnGap)
             ColumnTitle("Worktrees", count: repo.worktrees.count)
         }
