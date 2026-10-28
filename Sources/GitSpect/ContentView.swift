@@ -7,7 +7,6 @@ struct ContentView: View {
     @State private var collapsed: Set<String> = []
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @AppStorage("selectedRepoPath") private var selectedPath = ""
-    @AppStorage("showsOutput") private var showsOutput = false
     @AppStorage("outputHeight") private var outputHeight = 200.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -33,9 +32,9 @@ struct ContentView: View {
                         VStack(spacing: 0) {
                             detail
                                 .frame(maxHeight: .infinity)
-                            if showsOutput {
+                            if model.showsOutput {
                                 OutputPanel(height: $outputHeight, maxHeight: proxy.size.height - 200) {
-                                    showsOutput = false
+                                    model.setOutputVisible(false)
                                 }
                             }
                         }

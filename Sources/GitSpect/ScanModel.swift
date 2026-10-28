@@ -90,6 +90,10 @@ final class ScanModel {
     private var graphRow: RowID?
     var deletionRequest: DeletionRequest?
     private(set) var log: [LogEntry] = []
+    /// The output drawer starts hidden each launch and opens with the first command that runs,
+    /// unless it has been closed this session.
+    private(set) var showsOutput = false
+    private var outputDismissed = false
     private var scanTask: Task<Void, Never>?
 
     init() {
@@ -404,6 +408,12 @@ final class ScanModel {
 
     // MARK: - Output log
 
+    /// Show or hide the output drawer. Hiding it keeps it closed for the rest of the session.
+    func setOutputVisible(_ visible: Bool) {
+        showsOutput = visible
+        if !visible { outputDismissed = true }
+    }
+
     func clearLog() {
         log.removeAll { $0.status != .running }
     }
@@ -415,6 +425,7 @@ final class ScanModel {
         let entry = LogEntry(repo: repo.name, command: "git " + args.joined(separator: " "))
         let id = entry.id
         log.append(entry)
+        if !showsOutput && !outputDismissed { showsOutput = true }
         if log.count > Self.logLimit { log.removeFirst(log.count - Self.logLimit) }
 
         do {

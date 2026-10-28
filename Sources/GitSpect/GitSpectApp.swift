@@ -4,7 +4,6 @@ import SwiftUI
 @main
 struct GitSpectApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @AppStorage("showsOutput") private var showsOutput = false
     /// Shared by the main window and Settings (which manages the scanned folders).
     @State private var model = ScanModel()
 
@@ -20,7 +19,9 @@ struct GitSpectApp: App {
         .commands {
             // View menu, next to Show/Hide Sidebar, like Xcode's debug area.
             CommandGroup(after: .sidebar) {
-                Button(showsOutput ? "Hide Output" : "Show Output") { showsOutput.toggle() }
+                Button(model.showsOutput ? "Hide Output" : "Show Output") {
+                    model.setOutputVisible(!model.showsOutput)
+                }
                     .keyboardShortcut("y", modifiers: [.command, .shift])
             }
         }
