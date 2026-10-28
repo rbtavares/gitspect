@@ -9,9 +9,10 @@ struct ContentView: View {
     /// Left edges, in window coordinates, of the list's "Branches" header and the toolbar's repo title.
     @State private var listTextX: CGFloat?
     @State private var titleX: CGFloat?
-    /// The shift in use. Only updated once measurements have settled: mid-animation they're
-    /// stale or change in steps, which made the title jump.
-    @State private var titleShift: CGFloat = 0
+    /// The shift that lines the title up while the sidebar is open. Remembered, so expanding the
+    /// sidebar applies it straight away; re-measured only once the layout has settled, since
+    /// mid-animation measurements are stale.
+    @State private var expandedTitleShift: CGFloat = 0
     @State private var alignTask: Task<Void, Never>?
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("outputHeight") private var outputHeight = 200.0
@@ -86,11 +87,7 @@ struct ContentView: View {
         }
         // Hidden from the toolbar by the window's style (RepoTitle shows instead); still used by the Window menu.
         .navigationTitle(selectedRepo?.name ?? "GitSpect")
-        // The sidebar starting to move: back to where macOS puts the title for the slide itself.
-        .onChange(of: columnVisibility) {
-            titleShift = 0
-            scheduleTitleAlignment()
-        }
+        .onChange(of: columnVisibility) { scheduleTitleAlignment() }
         .onChange(of: listTextX) { scheduleTitleAlignment() }
         .onChange(of: titleX) { scheduleTitleAlignment() }
         .onChange(of: selectedPath) {
@@ -338,19 +335,21 @@ struct ContentView: View {
     /// Where macOS places toolbar items depends on the window (full screen or not, sidebar width),
     /// so both are measured rather than assumed. With the sidebar collapsed the title stays put:
     /// lining up would slide it under the sidebar button.
-    private var measuredTitleShift: CGFloat {
-        guard columnVisibility != .detailOnly, let listTextX, let titleX else { return 0 }
-        // titleX is the item's own position, without the shift (that only moves the drawing).
-        return listTextX - titleX
+    private var titleShift: CGFloat {
+        columnVisibility == .detailOnly ? 0 : expandedTitleShift
     }
 
-    /// Waits for the layout to stop changing, then glides the title into line.
+    /// Waits for the layout to stop changing, then re-measures the open-sidebar shift. It only
+    /// moves the title when the layout really changed (e.g. a window resize), not on a toggle.
     private func scheduleTitleAlignment() {
         alignTask?.cancel()
         alignTask = Task {
             try? await Task.sleep(for: .seconds(0.35))
-            guard !Task.isCancelled else { return }
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { titleShift = measuredTitleShift }
+            guard !Task.isCancelled, columnVisibility != .detailOnly, let listTextX, let titleX else { return }
+            // titleX is the item's own position, without the shift (that only moves the drawing).
+            let shift = listTextX - titleX
+            guard abs(shift - expandedTitleShift) > 0.5 else { return }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { expandedTitleShift = shift }
         }
     }
 
