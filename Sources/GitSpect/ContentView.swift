@@ -9,6 +9,10 @@ struct ContentView: View {
     /// Left edges, in window coordinates, of the detail area and of the toolbar's repo title.
     @State private var detailX: CGFloat?
     @State private var titleX: CGFloat?
+    /// While the sidebar slides, macOS moves the toolbar items in steps; the titles sit it out
+    /// and fade back in together once everything has settled.
+    @State private var isSidebarMoving = false
+    @State private var settleTask: Task<Void, Never>?
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("outputHeight") private var outputHeight = 200.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -83,6 +87,16 @@ struct ContentView: View {
         }
         // Hidden from the toolbar by the window's style (RepoTitle shows instead); still used by the Window menu.
         .navigationTitle(selectedRepo?.name ?? "GitSpect")
+        .onChange(of: columnVisibility) {
+            settleTask?.cancel()
+            guard !reduceMotion else { return }
+            isSidebarMoving = true
+            settleTask = Task {
+                try? await Task.sleep(for: .seconds(Self.sidebarSettleDelay))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.2)) { isSidebarMoving = false }
+            }
+        }
         .onChange(of: selectedPath) {
             model.clearSelection()
         }
@@ -91,6 +105,7 @@ struct ContentView: View {
                 if let repo = selectedRepo {
                     RepoTitle(repo: repo)
                         .offset(x: titleShift)
+                        .opacity(isSidebarMoving ? 0 : 1)
                         // Measures where macOS placed the item (the offset only moves the drawing).
                         .background(WindowXReader { titleX = $0 })
                 }
@@ -180,7 +195,7 @@ struct ContentView: View {
             // animating them during that move flashes, so it only fades in once the sidebar is open.
             ToolbarItem {
                 if columnVisibility != .detailOnly {
-                    sidebarTitle.modifier(FadeInOnAppear(delay: 0.15, animated: !reduceMotion))
+                    sidebarTitle.modifier(FadeInOnAppear(delay: Self.sidebarSettleDelay, animated: !reduceMotion))
                 }
             }
         }
@@ -320,6 +335,9 @@ struct ContentView: View {
         let folders = "\(model.roots.count) folder\(model.roots.count == 1 ? "" : "s")"
         return model.isScanning ? "\(folders) · scanning…" : folders
     }
+
+    /// Roughly how long the sidebar takes to slide in or out.
+    private static let sidebarSettleDelay = 0.3
 
     /// How far to move the toolbar's repo title so it lines up with the "Branches" header below
     /// (20pt in from the detail area). Where macOS places toolbar items depends on the window
