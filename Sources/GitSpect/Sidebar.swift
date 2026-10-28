@@ -205,30 +205,33 @@ struct SidebarRow: View {
                 }
             }
             Spacer(minLength: 4)
+            // While git runs on the repo, the spinner stands in for its counts.
             if model.running[repo.url] != nil {
                 ProgressView().controlSize(.mini)
-            } else if model.errors[repo.url] != nil {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.red)
-                    .help(model.errors[repo.url] ?? "")
-            }
-            // Pull/push only take space when non-zero; each pulls or pushes every branch it can.
-            if behind > 0 {
-                let branches = model.pullableBranches(in: repo).count
-                SyncPill(symbol: "arrow.down", count: behind, color: .blue) { model.pullAll(in: repo) }
-                    .disabled(branches == 0 || model.running[repo.url] != nil)
-                    .help(branches == 0
-                          ? "\(behind) commit\(behind == 1 ? "" : "s") behind, but every branch has diverged: needs a merge or rebase"
-                          : "Pull \(behind) commit\(behind == 1 ? "" : "s") (fast-forward \(branches) branch\(branches == 1 ? "" : "es"))")
-            }
-            if ahead > 0 {
-                let branches = model.pushableBranches(in: repo).count
-                SyncPill(symbol: "arrow.up", count: ahead, color: .green) { model.pushAll(in: repo) }
-                    .disabled(branches == 0 || model.running[repo.url] != nil)
-                    .help(branches == 0
-                          ? "\(ahead) commit\(ahead == 1 ? "" : "s") ahead, but no branch can be pushed as-is (diverged or a differently named upstream)"
-                          : "Push \(ahead) commit\(ahead == 1 ? "" : "s") (\(branches) branch\(branches == 1 ? "" : "es"))")
+            } else {
+                if model.errors[repo.url] != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.red)
+                        .help(model.errors[repo.url] ?? "")
+                }
+                // Pull/push only take space when non-zero; each pulls or pushes every branch it can.
+                if behind > 0 {
+                    let branches = model.pullableBranches(in: repo).count
+                    SyncPill(symbol: "arrow.down", count: behind, color: .blue) { model.pullAll(in: repo) }
+                        .disabled(branches == 0)
+                        .help(branches == 0
+                              ? "\(behind) commit\(behind == 1 ? "" : "s") behind, but every branch has diverged: needs a merge or rebase"
+                              : "Pull \(behind) commit\(behind == 1 ? "" : "s") (fast-forward \(branches) branch\(branches == 1 ? "" : "es"))")
+                }
+                if ahead > 0 {
+                    let branches = model.pushableBranches(in: repo).count
+                    SyncPill(symbol: "arrow.up", count: ahead, color: .green) { model.pushAll(in: repo) }
+                        .disabled(branches == 0)
+                        .help(branches == 0
+                              ? "\(ahead) commit\(ahead == 1 ? "" : "s") ahead, but no branch can be pushed as-is (diverged or a differently named upstream)"
+                              : "Push \(ahead) commit\(ahead == 1 ? "" : "s") (\(branches) branch\(branches == 1 ? "" : "es"))")
+                }
             }
         }
         .help(repo.url.path + "\n" + (repo.remotes.first.map { "\($0.name): \($0.displayName)" } ?? "Local only: no remote"))
