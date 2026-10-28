@@ -36,13 +36,15 @@ struct Overview: View {
                          color: totals.ahead > 0 ? .green : nil)
                     Stat(value: localOnly, label: "Local Only", detail: "repositories with no remote")
                 }
+                // Every card as tall as the tallest.
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 640)
             }
 
             HStack(spacing: 18) {
-                Shortcut(keys: "⇧⌘O", action: "Add Folders")
-                Shortcut(keys: "⌘R", action: "Rescan")
-                Shortcut(keys: "⇧⌘Y", action: "Show Output")
+                Shortcut(keys: ["⇧", "⌘", "O"], action: "Add Folders")
+                Shortcut(keys: ["⌘", "R"], action: "Rescan")
+                Shortcut(keys: ["⇧", "⌘", "Y"], action: "Show Output")
             }
         }
         .padding(32)
@@ -74,30 +76,36 @@ private struct Stat: View {
             Text(detail)
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+                // Two lines in every card, so the numbers line up whatever wraps.
+                .lineLimit(2, reservesSpace: true)
         }
         .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
 
+/// A shortcut as keycaps, one per key, then what it does.
 private struct Shortcut: View {
-    let keys: String
+    let keys: [String]
     let action: String
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(keys)
-                .font(.system(size: 11, weight: .medium).monospaced())
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+        HStack(spacing: 8) {
+            HStack(spacing: 3) {
+                ForEach(keys, id: \.self) { key in
+                    Text(key)
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(minWidth: 20, minHeight: 20)
+                        .padding(.horizontal, 2)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                }
+            }
             Text(action)
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .combine)
     }
 }
