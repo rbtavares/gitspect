@@ -10,6 +10,9 @@ struct GitSpectApp: App {
             ContentView()
                 .frame(minWidth: 640, minHeight: 400)
         }
+        Settings {
+            SettingsView()
+        }
     }
 }
 
@@ -18,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Needed when launched as a bare executable (`swift run`) rather than a .app bundle.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        AppIcon.current.apply()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
