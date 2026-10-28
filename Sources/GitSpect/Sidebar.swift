@@ -51,6 +51,8 @@ struct Sidebar: View {
         // Compact rows regardless of the system's sidebar icon size setting.
         // Compact rows; the names are set back to 13pt on the rows themselves.
         .environment(\.sidebarRowSize, .small)
+        // Room between the controls above and the first folder.
+        .contentMargins(.top, 10, for: .scrollContent)
     }
 
     private var rows: [Row] {
