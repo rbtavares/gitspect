@@ -103,7 +103,6 @@ struct RepoTitle: View {
                 }
             }
         }
-        .padding(.horizontal, 8)
         .contextMenu { PathActions(path: repo.url.path) }
     }
 
