@@ -55,8 +55,75 @@ struct GraphRow: Identifiable, Sendable {
     let parentColumns: [Int]
 }
 
+/// What the commit drawer shows beyond the graph row.
+struct CommitDetails: Sendable {
+    let authorName: String
+    let authorEmail: String
+    let authorDate: Date
+    let committerName: String
+    let committerEmail: String
+    let commitDate: Date
+    let message: String
+    /// Against the first parent, or everything for a root commit.
+    let files: [FileChange]
+}
+
+struct FileChange: Identifiable, Sendable {
+    var id: String { (oldPath ?? "") + "\0" + path }
+    let path: String
+    /// Set when the file was renamed or moved.
+    let oldPath: String?
+    /// Lines added and removed; nil for binary files.
+    let added: Int?
+    let deleted: Int?
+}
+
 enum GitGraph {
     static let commitLimit = 400
+
+    static func details(repo: URL, commit: GraphCommit) async throws -> CommitDetails {
+        let format = ["%an", "%ae", "%at", "%cn", "%ce", "%ct", "%B"].joined(separator: "%x1f")
+        let meta = try await Git.run(
+            ["--no-optional-locks", "show", "-s", "--no-color", "--format=\(format)", commit.hash], in: repo
+        )
+        let fields = meta.split(separator: "\u{1f}", maxSplits: 6, omittingEmptySubsequences: false).map(String.init)
+        guard fields.count == 7 else { throw GitError(message: "Unexpected output from git show") }
+
+        let base = commit.parents.first.map { [$0] } ?? ["--root"]
+        let stat = try await Git.run(
+            ["--no-optional-locks", "diff-tree", "-r", "-M", "--numstat", "-z", "--no-commit-id"] + base + [commit.hash],
+            in: repo
+        )
+
+        return CommitDetails(
+            authorName: fields[0], authorEmail: fields[1], authorDate: date(fields[2]),
+            committerName: fields[3], committerEmail: fields[4], commitDate: date(fields[5]),
+            message: fields[6].trimmingCharacters(in: .whitespacesAndNewlines), files: parseNumstat(stat)
+        )
+    }
+
+    /// `--numstat -z`: `added\tdeleted\tpath\0`, or for a rename `added\tdeleted\t\0old\0new\0`.
+    /// Binary files report `-` for both counts.
+    static func parseNumstat(_ output: String) -> [FileChange] {
+        var tokens = output.split(separator: "\0", omittingEmptySubsequences: false)[...]
+        var files: [FileChange] = []
+        while let token = tokens.popFirst() {
+            let parts = token.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
+            guard parts.count == 3 else { continue }
+            let added = Int(parts[0]), deleted = Int(parts[1])
+            if parts[2].isEmpty {
+                guard let old = tokens.popFirst(), let new = tokens.popFirst() else { break }
+                files.append(FileChange(path: String(new), oldPath: String(old), added: added, deleted: deleted))
+            } else {
+                files.append(FileChange(path: String(parts[2]), oldPath: nil, added: added, deleted: deleted))
+            }
+        }
+        return files
+    }
+
+    private static func date(_ seconds: String) -> Date {
+        Date(timeIntervalSince1970: TimeInterval(seconds) ?? 0)
+    }
 
     /// History of `branch` and, when given, its upstream, newest first.
     static func load(repo: URL, branch: String, upstreamRef: String?) async throws -> [GraphCommit] {

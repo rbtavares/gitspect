@@ -15,7 +15,9 @@ struct GraphPane: View {
     @State private var isLoading = false
     @State private var refreshes = 0
     @State private var selectedCommit: String?
+    @State private var scrollTarget: String?
     @State private var dragStart: CGFloat?
+    @AppStorage("commitDrawerHeight") private var drawerHeight = 260.0
 
     static let minWidth: CGFloat = 300
     /// Room always left for the repo view.
@@ -42,6 +44,7 @@ struct GraphPane: View {
         .frame(width: clamped(totalWidth * fraction))
         .background(Color(nsColor: .textBackgroundColor))
         .task(id: LoadKey(target: target, status: status, refreshes: refreshes)) { await load() }
+        .onChange(of: target) { selectedCommit = nil }
     }
 
     private var resizeHandle: some View {
@@ -117,10 +120,33 @@ struct GraphPane: View {
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
+            GeometryReader { proxy in
+                VStack(spacing: 0) {
+                    commitList
+                    if let hash = selectedCommit, let row = rows.first(where: { $0.commit.hash == hash }) {
+                        CommitDrawer(
+                            commit: row.commit, repo: target.repo, height: $drawerHeight,
+                            maxHeight: proxy.size.height - 80,
+                            isInGraph: { parent in rows.contains { $0.commit.hash == parent } },
+                            select: { parent in
+                                selectedCommit = parent
+                                scrollTarget = parent
+                            },
+                            close: { selectedCommit = nil }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private var commitList: some View {
+        ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(rows) { row in
                         CommitRow(row: row, laneCount: laneCount, isSelected: selectedCommit == row.commit.hash)
+                            .id(row.commit.hash)
                             .onTapGesture { selectedCommit = selectedCommit == row.commit.hash ? nil : row.commit.hash }
                     }
                     if rows.count >= GitGraph.commitLimit {
@@ -131,6 +157,12 @@ struct GraphPane: View {
                     }
                 }
                 .padding(.vertical, 4)
+            }
+            // Jumping to a parent from the drawer brings it into view.
+            .onChange(of: scrollTarget) {
+                guard let scrollTarget else { return }
+                withAnimation(.snappy(duration: 0.25)) { proxy.scrollTo(scrollTarget, anchor: .center) }
+                self.scrollTarget = nil
             }
         }
     }
@@ -201,11 +233,6 @@ private struct CommitRow: View {
             Button("Copy Commit Hash") { copy(commit.hash) }
             Button("Copy Subject") { copy(commit.subject) }
         }
-    }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 }
 
@@ -296,4 +323,270 @@ private struct RefBadge: View {
         .fixedSize(horizontal: false, vertical: true)
         .help(ref.name)
     }
+}
+
+/// Bottom drawer in the graph pane with one commit's message, people, parents and changed files.
+private struct CommitDrawer: View {
+    let commit: GraphCommit
+    let repo: URL
+    @Binding var height: Double
+    let maxHeight: CGFloat
+    /// Whether a parent is loaded in the graph, so it can be jumped to.
+    let isInGraph: (String) -> Bool
+    let select: (String) -> Void
+    let close: () -> Void
+    @State private var details: CommitDetails?
+    @State private var error: String?
+    @State private var dragStart: Double?
+
+    private static let minHeight: CGFloat = 120
+
+    var body: some View {
+        VStack(spacing: 0) {
+            resizeHandle
+            header
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    message
+                    people
+                    if !commit.parents.isEmpty || !commit.refs.isEmpty { links }
+                    files
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(height: clamped(height))
+        .background(Color(nsColor: .textBackgroundColor))
+        .task(id: commit.hash) { await load() }
+    }
+
+    private var resizeHandle: some View {
+        Divider()
+            .overlay {
+                Color.clear
+                    .frame(height: 8)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+                    }
+                    .gesture(
+                        DragGesture(coordinateSpace: .global)
+                            .onChanged { value in
+                                let start = dragStart ?? height
+                                dragStart = start
+                                height = start - value.translation.height
+                            }
+                            .onEnded { _ in
+                                height = clamped(height)
+                                dragStart = nil
+                            }
+                    )
+            }
+    }
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Text("Commit")
+                .font(.system(size: 11, weight: .semibold))
+            Text(commit.shortHash)
+                .font(.system(size: 11).monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            Button { copy(commit.hash) } label: {
+                Image(systemName: "doc.on.doc").font(.system(size: 9))
+            }
+            .buttonStyle(.borderless)
+            .help("Copy full hash")
+            Spacer()
+            Button(action: close) {
+                Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
+            }
+            .buttonStyle(.borderless)
+            .help("Close commit details")
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 26)
+        .background(.bar)
+    }
+
+    @ViewBuilder private var message: some View {
+        let text = details?.message ?? commit.subject
+        let lines = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(lines.first.map(String.init) ?? "")
+                .font(.system(size: 13, weight: .semibold))
+            if lines.count > 1 {
+                let body = lines[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                if !body.isEmpty {
+                    Text(body)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .textSelection(.enabled)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder private var people: some View {
+        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
+            if let details {
+                person("Author", details.authorName, details.authorEmail, details.authorDate)
+                // Rebases and cherry-picks keep the author but change who committed, and when.
+                if details.committerEmail != details.authorEmail
+                    || abs(details.commitDate.timeIntervalSince(details.authorDate)) > 60 {
+                    person("Committer", details.committerName, details.committerEmail, details.commitDate)
+                }
+            } else {
+                GridRow {
+                    label("Author")
+                    Text("\(commit.author) · \(commit.date.formatted(date: .abbreviated, time: .shortened))")
+                }
+            }
+        }
+        .font(.system(size: 11))
+    }
+
+    private func person(_ role: String, _ name: String, _ email: String, _ date: Date) -> some View {
+        GridRow {
+            label(role)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(name) <\(email)>").textSelection(.enabled)
+                Text("\(date.formatted(date: .abbreviated, time: .shortened)) · \(date.formatted(.relative(presentation: .named)))")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var links: some View {
+        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
+            if !commit.parents.isEmpty {
+                GridRow {
+                    label(commit.parents.count > 1 ? "Parents" : "Parent")
+                    HStack(spacing: 8) {
+                        ForEach(commit.parents, id: \.self) { parent in
+                            Button(String(parent.prefix(7))) { select(parent) }
+                                .buttonStyle(.link)
+                                .font(.system(size: 11).monospaced())
+                                .disabled(!isInGraph(parent))
+                                .help(isInGraph(parent) ? "Show \(parent)" : "\(parent) is older than the commits loaded")
+                        }
+                    }
+                }
+            }
+            if !commit.refs.isEmpty {
+                GridRow {
+                    label("Refs")
+                    HStack(spacing: 4) {
+                        ForEach(commit.refs, id: \.self) { RefBadge(ref: $0) }
+                    }
+                }
+            }
+        }
+        .font(.system(size: 11))
+    }
+
+    @ViewBuilder private var files: some View {
+        if let error {
+            Text(error)
+                .font(.system(size: 11))
+                .foregroundStyle(.red)
+                .textSelection(.enabled)
+        } else if let details {
+            let added = details.files.reduce(0) { $0 + ($1.added ?? 0) }
+            let deleted = details.files.reduce(0) { $0 + ($1.deleted ?? 0) }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text("\(details.files.count) file\(details.files.count == 1 ? "" : "s") changed")
+                        .font(.system(size: 11, weight: .semibold))
+                    LineCounts(added: added, deleted: deleted)
+                    if commit.parents.count > 1 {
+                        Text("against first parent")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(details.files) { FileRow(file: $0) }
+                }
+            }
+        } else {
+            ProgressView().controlSize(.small)
+        }
+    }
+
+    private func label(_ text: String) -> some View {
+        Text(text)
+            .foregroundStyle(.secondary)
+            .gridColumnAlignment(.trailing)
+    }
+
+    private func load() async {
+        details = nil
+        error = nil
+        do {
+            let loaded = try await GitGraph.details(repo: repo, commit: commit)
+            guard !Task.isCancelled else { return }
+            details = loaded
+        } catch {
+            guard !Task.isCancelled else { return }
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func clamped(_ value: Double) -> CGFloat {
+        min(max(CGFloat(value), Self.minHeight), max(maxHeight, Self.minHeight))
+    }
+}
+
+private struct FileRow: View {
+    let file: FileChange
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: file.oldPath == nil ? "doc" : "arrow.right.doc.on.clipboard")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .frame(width: 14)
+            Text(file.oldPath.map { "\($0) → \(file.path)" } ?? file.path)
+                .font(.system(size: 11).monospaced())
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(file.oldPath.map { "Renamed from \($0)" } ?? file.path)
+            Spacer(minLength: 8)
+            if let added = file.added, let deleted = file.deleted {
+                LineCounts(added: added, deleted: deleted)
+            } else {
+                Text("binary")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .frame(height: 18)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("Copy Path") { copy(file.path) }
+        }
+    }
+}
+
+private struct LineCounts: View {
+    let added: Int
+    let deleted: Int
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text("+\(added)").foregroundStyle(.green)
+            Text("−\(deleted)").foregroundStyle(.red)
+        }
+        .font(.system(size: 11, weight: .medium).monospacedDigit())
+        .fixedSize()
+    }
+}
+
+private func copy(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
 }
