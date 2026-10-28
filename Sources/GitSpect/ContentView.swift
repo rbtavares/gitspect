@@ -6,14 +6,6 @@ struct ContentView: View {
     @State private var query = ""
     @State private var collapsed: Set<String> = []
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
-    /// Left edges, in window coordinates, of the list's "Branches" header and the toolbar's repo title.
-    @State private var listTextX: CGFloat?
-    @State private var titleX: CGFloat?
-    /// The shift that lines the title up while the sidebar is open. Remembered, so expanding the
-    /// sidebar applies it straight away; re-measured only once the layout has settled, since
-    /// mid-animation measurements are stale.
-    @State private var expandedTitleShift: CGFloat = 0
-    @State private var alignTask: Task<Void, Never>?
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("outputHeight") private var outputHeight = 200.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -87,20 +79,12 @@ struct ContentView: View {
         }
         // Hidden from the toolbar by the window's style (RepoTitle shows instead); still used by the Window menu.
         .navigationTitle(selectedRepo?.name ?? "GitSpect")
-        .onChange(of: columnVisibility) { scheduleTitleAlignment() }
-        .onChange(of: listTextX) { scheduleTitleAlignment() }
-        .onChange(of: titleX) { scheduleTitleAlignment() }
         .onChange(of: selectedPath) {
             model.clearSelection()
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                if let repo = selectedRepo {
-                    RepoTitle(repo: repo)
-                        .offset(x: titleShift)
-                        // Measures where macOS placed the item (the offset only moves the drawing).
-                        .background(WindowXReader { titleX = $0 })
-                }
+                if let repo = selectedRepo { RepoTitle(repo: repo) }
             }
             // Flexible space: the repo's own Fetch sits at the far right.
             ToolbarItem { Spacer() }
@@ -218,7 +202,7 @@ struct ContentView: View {
 
     @ViewBuilder private var detail: some View {
         if let repo = model.repos.first(where: { $0.url.path == selectedPath }) {
-            RepoDetail(repo: repo) { listTextX = $0 }
+            RepoDetail(repo: repo)
                 .overlay(alignment: .bottom) {
                     // Only once something deletable is selected (the main checkout isn't).
                     let deletable = model.deletionItems(model.selection)
@@ -323,28 +307,6 @@ struct ContentView: View {
     private var subtitle: String {
         let folders = "\(model.roots.count) folder\(model.roots.count == 1 ? "" : "s")"
         return model.isScanning ? "\(folders) · scanning…" : folders
-    }
-
-    /// How far to move the toolbar's repo title so it lines up with the "Branches" header below.
-    /// Where macOS places toolbar items depends on the window (full screen or not, sidebar width),
-    /// so both are measured rather than assumed. With the sidebar collapsed the title stays put:
-    /// lining up would slide it under the sidebar button.
-    private var titleShift: CGFloat {
-        columnVisibility == .detailOnly ? 0 : expandedTitleShift
-    }
-
-    /// Waits for the layout to stop changing, then re-measures the open-sidebar shift. It only
-    /// moves the title when the layout really changed (e.g. a window resize), not on a toggle.
-    private func scheduleTitleAlignment() {
-        alignTask?.cancel()
-        alignTask = Task {
-            try? await Task.sleep(for: .seconds(0.35))
-            guard !Task.isCancelled, columnVisibility != .detailOnly, let listTextX, let titleX else { return }
-            // titleX is the item's own position, without the shift (that only moves the drawing).
-            let shift = listTextX - titleX
-            guard abs(shift - expandedTitleShift) > 0.5 else { return }
-            expandedTitleShift = shift
-        }
     }
 
     private var selectedRepo: Repo? { model.repos.first { $0.url.path == selectedPath } }
