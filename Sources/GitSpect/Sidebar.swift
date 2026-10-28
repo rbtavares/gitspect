@@ -17,15 +17,12 @@ struct Sidebar: View {
         case root(RootNode)
         case folder(RepoGroup)
         case repo(Repo, depth: Int)
-        /// Breathing room before a folder.
-        case gap(before: String)
 
         var id: String {
             switch self {
             case .root(let node): "root:" + node.root.path
             case .folder(let group): "folder:" + group.id
             case .repo(let repo, _): "repo:" + repo.url.path
-            case .gap(let before): "gap:" + before
             }
         }
     }
@@ -37,7 +34,6 @@ struct Sidebar: View {
                 case .root(let node):
                     FolderRow(title: node.root.lastPathComponent, depth: 0,
                               isExpanded: isExpanded(node.root.path)) { toggle(node.root.path) }
-                        .fontWeight(.semibold)
                         .help(node.root.path)
                         .tag(node.root)
                         .contextMenu {
@@ -67,16 +63,12 @@ struct Sidebar: View {
                     .padding(.leading, FolderRow.indent(depth - 1))
                     .frame(minHeight: Self.rowHeight)
                     .tag(repo.url)
-                case .gap:
-                    Color.clear
-                        .frame(height: 8)
-                        .selectionDisabled()
-                        .accessibilityHidden(true)
+
                 }
             }
         }
         .listStyle(.sidebar)
-        // Rows set their own height, so the gaps between folders can be shorter than a row.
+        // Rows set their own (compact) height.
         .environment(\.defaultMinListRowHeight, 1)
         .confirmationDialog(
             "Move “\(trashRequest?.path ?? "")” to the Trash?",
@@ -95,14 +87,12 @@ struct Sidebar: View {
     private var rows: [Row] {
         var rows: [Row] = []
         for node in roots {
-            if !rows.isEmpty { rows.append(.gap(before: node.root.path)) }
             rows.append(.root(node))
             guard isExpanded(node.root.path) else { continue }
             for group in node.groups {
                 if group.path.isEmpty {
                     rows += group.repos.map { .repo($0, depth: 1) }
                 } else {
-                    rows.append(.gap(before: group.id))
                     rows.append(.folder(group))
                     if isExpanded(group.id) { rows += group.repos.map { .repo($0, depth: 2) } }
                 }
@@ -158,7 +148,7 @@ private struct FolderRow: View {
             // Name only: the chevron marks it as a folder. Set on the text itself, like repo names,
             // since small sidebar rows shrink text to 11pt.
             Text(title)
-                .font(.system(size: 13))
+                .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .padding(.leading, 4)
