@@ -49,8 +49,31 @@ struct ContentView: View {
             presenting: model.deletionRequest
         ) { request in
             let items = sorted(request.items)
-            Button(request.force ? "Force Delete" : model.deleteTitle(for: items), role: .destructive) {
-                runDeletion(items, force: request.force)
+            if request.force {
+                Button("Force Delete", role: .destructive) {
+                    runDeletion(items, force: true, alsoBranches: request.alsoBranches)
+                }
+            } else {
+                // Only the choices that apply to what's selected.
+                let branchRows = items.filter { !$0.isWorktree }
+                let worktreeRows = items.filter(\.isWorktree)
+                if !branchRows.isEmpty {
+                    Button("Delete \(count(branchRows.count, "Branch", "Branches"))", role: .destructive) {
+                        runDeletion(branchRows, force: false, alsoBranches: false)
+                    }
+                }
+                if !worktreeRows.isEmpty {
+                    Button("Delete \(count(worktreeRows.count, "Worktree", "Worktrees"))", role: .destructive) {
+                        runDeletion(worktreeRows, force: false, alsoBranches: false)
+                    }
+                    let branches = branchRows.count + worktreeRows.filter(model.hasBranch).count
+                    if branches > 0 {
+                        Button("Delete \(count(branches, "Branch", "Branches")) and \(count(worktreeRows.count, "Worktree", "Worktrees"))",
+                               role: .destructive) {
+                            runDeletion(items, force: false, alsoBranches: true)
+                        }
+                    }
+                }
             }
         } message: { request in
             Text(dialogMessage(request))
@@ -59,7 +82,6 @@ struct ContentView: View {
         .navigationTitle(selectedRepo?.name ?? "GitSpect")
         .onChange(of: selectedPath) {
             model.clearSelection()
-            model.closeGraph()
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {
@@ -173,10 +195,12 @@ struct ContentView: View {
         if let repo = model.repos.first(where: { $0.url.path == selectedPath }) {
             RepoDetail(repo: repo)
                 .overlay(alignment: .bottom) {
-                    if !model.selection.isEmpty {
-                        SelectionBar(summary: countPhrase(Array(model.selection)) + " selected",
+                    // Only once something deletable is selected (the main checkout isn't).
+                    let deletable = model.deletionItems(model.selection)
+                    if !deletable.isEmpty {
+                        SelectionBar(summary: countPhrase(deletable).lowercased() + " selected",
                                      isBusy: !model.running.isEmpty) {
-                            model.requestDeletion(Array(model.selection))
+                            model.requestDeletion(deletable)
                         } clear: {
                             model.clearSelection()
                         }
@@ -184,7 +208,8 @@ struct ContentView: View {
                         .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     }
                 }
-                .animation(reduceMotion ? nil : .spring(duration: 0.3, bounce: 0), value: model.selection.isEmpty)
+                .animation(reduceMotion ? nil : .spring(duration: 0.3, bounce: 0),
+                           value: model.deletionItems(model.selection).isEmpty)
         } else {
             ContentUnavailableView("Select a Repository", systemImage: "sidebar.left",
                                    description: Text("Choose a repo in the sidebar to see its branches and worktrees."))
@@ -193,22 +218,27 @@ struct ContentView: View {
 
     // MARK: - Deletion dialog
 
-    private func runDeletion(_ items: [Selectable], force: Bool) {
-        Task { await model.delete(items, force: force) }
+    private func runDeletion(_ items: [Selectable], force: Bool, alsoBranches: Bool) {
+        Task { await model.delete(items, force: force, alsoBranches: alsoBranches) }
     }
 
     private func dialogTitle(_ request: DeletionRequest) -> String {
         if request.force { return "\(request.items.count) item\(request.items.count == 1 ? " needs" : "s need") force" }
-        return "Delete " + countPhrase(request.items) + "?"
+        return "Delete " + countPhrase(request.items).lowercased() + "?"
     }
 
-    /// "2 branches and 1 worktree".
+    /// "2 Branches and 1 Worktree": rows that are just a branch, and worktree rows.
     private func countPhrase(_ items: [Selectable]) -> String {
-        let (branches, worktrees) = model.deletionCounts(items)
+        let worktrees = items.filter(\.isWorktree).count
+        let branches = items.count - worktrees
         return [
-            branches > 0 ? "\(branches) branch\(branches == 1 ? "" : "es")" : nil,
-            worktrees > 0 ? "\(worktrees) worktree\(worktrees == 1 ? "" : "s")" : nil,
+            branches > 0 ? count(branches, "Branch", "Branches") : nil,
+            worktrees > 0 ? count(worktrees, "Worktree", "Worktrees") : nil,
         ].compactMap { $0 }.joined(separator: " and ")
+    }
+
+    private func count(_ n: Int, _ one: String, _ many: String) -> String {
+        "\(n) \(n == 1 ? one : many)"
     }
 
     private func dialogMessage(_ request: DeletionRequest) -> String {

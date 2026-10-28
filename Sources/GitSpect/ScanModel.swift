@@ -9,8 +9,8 @@ enum RepoOperation: Hashable, Sendable {
     case removeWorktree(path: String)
 }
 
-/// A row the user can select and delete: a local branch on its own, or a linked worktree
-/// (deleting it removes the worktree, then the branch it has checked out).
+/// What a row can delete: a local branch on its own, or a linked worktree (and, when asked, the
+/// branch it has checked out).
 enum Selectable: Hashable, Sendable {
     case branch(repo: URL, name: String)
     case worktree(repo: URL, path: String)
@@ -52,6 +52,15 @@ struct DeletionRequest: Identifiable {
     let items: [Selectable]
     /// A retry of items git refused; confirming passes `--force` / `-D`.
     let force: Bool
+    /// For a retry: also delete the branches of removed worktrees, as first asked.
+    var alsoBranches = false
+}
+
+/// A line in the repo view: a branch, a worktree, or a worktree with its branch.
+struct RowID: Hashable, Sendable {
+    let repo: URL
+    /// `CheckoutPair.id`.
+    let pair: String
 }
 
 @Observable
@@ -73,10 +82,12 @@ final class ScanModel {
     private(set) var errors: [URL: String] = [:]
     private(set) var fetchAllProgress: (done: Int, total: Int)?
     private(set) var pullAllProgress: (done: Int, total: Int)?
-    private(set) var selection: Set<Selectable> = []
-    private var selectionAnchor: Selectable?
-    /// The branch shown in the graph pane, if it's open.
+    /// Selected rows. The row being looked at (graph open) is one of them.
+    private(set) var selection: Set<RowID> = []
+    private var selectionAnchor: RowID?
+    /// The branch shown in the graph pane, if it's open, and the row it was opened from.
     private(set) var graphTarget: GraphTarget?
+    private var graphRow: RowID?
     var deletionRequest: DeletionRequest?
     private(set) var log: [LogEntry] = []
     private var scanTask: Task<Void, Never>?
@@ -228,46 +239,36 @@ final class ScanModel {
     /// Repos are processed in parallel; git can't safely run two commands on one repo at once,
     /// so each repo's items run in order. Items git refuses without force (dirty worktrees,
     /// unmerged branches) come back as a new request for the user to confirm.
-    func delete(_ items: [Selectable], force: Bool) async {
+    ///
+    /// `alsoBranches` also deletes the branch each removed worktree had checked out.
+    func delete(_ items: [Selectable], force: Bool, alsoBranches: Bool) async {
         let byRepo = Array(Dictionary(grouping: items, by: \.repo).values)
         let refused = await forEach(byRepo) { items in
-            await self.deleteInRepo(items, force: force)
+            await self.deleteInRepo(items, force: force, alsoBranches: alsoBranches)
         }.flatMap { $0 }
+        pruneSelection()
 
         if !refused.isEmpty {
-            deletionRequest = DeletionRequest(items: refused, force: true)
+            deletionRequest = DeletionRequest(items: refused, force: true, alsoBranches: alsoBranches)
         }
     }
 
-    /// What deleting `items` removes: branches (on their own or checked out in a worktree) and worktrees.
-    func deletionCounts(_ items: [Selectable]) -> (branches: Int, worktrees: Int) {
-        var branches = 0, worktrees = 0
-        for item in items {
-            switch item {
-            case .branch: branches += 1
-            case .worktree(let repoURL, let path):
-                worktrees += 1
-                if repo(repoURL)?.worktrees.first(where: { $0.path == path })?.branch != nil { branches += 1 }
-            }
+    /// The deletable items among `rows`, in display order. The main checkout has none.
+    func deletionItems(_ rows: Set<RowID>) -> [Selectable] {
+        repos.flatMap { repo in
+            repo.pairs.compactMap { rows.contains(RowID(repo: repo.url, pair: $0.id)) ? repo.rowItem($0) : nil }
         }
-        return (branches, worktrees)
     }
 
-    /// "Delete Branch", "Delete Branches and Worktrees", and so on.
-    func deleteTitle(for items: [Selectable]) -> String {
-        let (branches, worktrees) = deletionCounts(items)
-        let branchWord = branches == 1 ? "Branch" : "Branches"
-        let worktreeWord = worktrees == 1 ? "Worktree" : "Worktrees"
-        switch (branches > 0, worktrees > 0) {
-        case (true, true): return "Delete \(branchWord) and \(worktreeWord)"
-        case (false, true): return "Delete \(worktreeWord)"
-        default: return "Delete \(branchWord)"
-        }
+    /// Whether a worktree item has a branch checked out (detached worktrees don't).
+    func hasBranch(_ item: Selectable) -> Bool {
+        guard case .worktree(let repoURL, let path) = item else { return true }
+        return repo(repoURL)?.worktrees.first { $0.path == path }?.branch != nil
     }
 
     /// Items from a single repo. Worktrees go first so their branches become deletable.
     /// Returns the items git refused without force.
-    private func deleteInRepo(_ items: [Selectable], force: Bool) async -> [Selectable] {
+    private func deleteInRepo(_ items: [Selectable], force: Bool, alsoBranches: Bool) async -> [Selectable] {
         var refused: [Selectable] = []
         var branches: [(item: Selectable, force: Bool)] = []
 
@@ -278,9 +279,8 @@ final class ScanModel {
                 let branch = repo.worktrees.first { $0.path == path }?.branch
                 switch await removeWorktree(repo, path: path, force: force) {
                 case .deleted:
-                    selection.remove(item)
                     // Never forced on the first try: an unmerged branch comes back to confirm.
-                    if let branch { branches.append((.branch(repo: repoURL, name: branch), false)) }
+                    if alsoBranches, let branch { branches.append((.branch(repo: repoURL, name: branch), false)) }
                 case .refused: refused.append(item)
                 case .failed: break
                 }
@@ -293,7 +293,6 @@ final class ScanModel {
             guard case .branch(let repoURL, let name) = item, let repo = repo(repoURL) else { continue }
             switch await deleteBranch(repo, branch: name, force: force) {
             case .deleted:
-                selection.remove(item)
                 if graphTarget == GraphTarget(repo: repoURL, branch: name) { graphTarget = nil }
             case .refused: refused.append(item)
             case .failed: break
@@ -335,38 +334,72 @@ final class ScanModel {
 
     // MARK: - Selection
 
-    enum SelectMode { case toggle, extend }
+    enum SelectMode { case only, toggle, extend }
 
-    /// ⌘-click toggles a row; ⇧-click extends a range of rows within one repo.
-    func select(_ item: Selectable, mode: SelectMode) {
+    /// List-style: a click selects just that row (clicking the only selected row again clears it),
+    /// ⌘ toggles a row, ⇧ extends a range from the last clicked row within one repo.
+    /// The graph shows the clicked row while it's selected.
+    func select(_ row: RowID, mode: SelectMode) {
         switch mode {
+        case .only:
+            if selection == [row] { return clearSelection() }
+            selection = [row]
+            selectionAnchor = row
         case .toggle:
-            if selection.remove(item) == nil { selection.insert(item) }
-            selectionAnchor = item
+            if selection.remove(row) == nil {
+                selection.insert(row)
+                selectionAnchor = row
+            }
         case .extend:
-            guard let anchor = selectionAnchor, anchor.repo == item.repo, let repo = repo(item.repo)
-            else { return select(item, mode: .toggle) }
-            let ordered = repo.selectableRows
-            guard let from = ordered.firstIndex(of: anchor), let to = ordered.firstIndex(of: item)
-            else { return select(item, mode: .toggle) }
+            guard let anchor = selectionAnchor, anchor.repo == row.repo, let repo = repo(row.repo)
+            else { return select(row, mode: .toggle) }
+            let ordered = repo.pairs.map { RowID(repo: repo.url, pair: $0.id) }
+            guard let from = ordered.firstIndex(of: anchor), let to = ordered.firstIndex(of: row)
+            else { return select(row, mode: .toggle) }
             selection.formUnion(ordered[min(from, to)...max(from, to)])
+        }
+
+        if selection.contains(row) {
+            showGraph(for: row)
+        } else if let graphRow, !selection.contains(graphRow) {
+            // The row on show was deselected: show another selected one, if any.
+            if let next = repo(row.repo)?.pairs.map({ RowID(repo: row.repo, pair: $0.id) }).first(where: selection.contains) {
+                showGraph(for: next)
+            } else {
+                closeGraph()
+            }
         }
     }
 
     func clearSelection() {
         selection = []
         selectionAnchor = nil
+        closeGraph()
+    }
+
+    /// Drops rows that no longer exist, e.g. after deleting them.
+    private func pruneSelection() {
+        let rows = Set(repos.flatMap { repo in repo.pairs.map { RowID(repo: repo.url, pair: $0.id) } })
+        selection.formIntersection(rows)
+        if let graphRow, !rows.contains(graphRow) { self.graphRow = nil }
+        if let anchor = selectionAnchor, !rows.contains(anchor) { selectionAnchor = nil }
     }
 
     // MARK: - Graph
 
-    /// Opens the graph for a branch; showing the branch already open closes it again.
-    func toggleGraph(_ target: GraphTarget) {
-        graphTarget = graphTarget == target ? nil : target
+    /// The graph of a row's branch (its own, or the one its worktree has checked out).
+    /// Rows without a branch with commits, like a detached worktree, close the graph.
+    private func showGraph(for row: RowID) {
+        guard let repo = repo(row.repo), let branch = repo.pairs.first(where: { $0.id == row.pair })?.branch,
+              repo.branches.contains(branch)
+        else { return closeGraph() }
+        graphTarget = GraphTarget(repo: repo.url, branch: branch)
+        graphRow = row
     }
 
     func closeGraph() {
         graphTarget = nil
+        graphRow = nil
     }
 
     // MARK: - Output log

@@ -196,13 +196,10 @@ struct PairRow: View {
         .frame(height: 22)
         .padding(.leading, 20)
         .background {
-            // A branch and its worktree are one line: selected rows are filled, and the outline
-            // marks the row whose graph is open.
-            let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
-            shape
+            // A branch and its worktree are one line, selected as one.
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(isSelected ? Color.accentColor.opacity(isHovered ? 0.28 : 0.2)
                       : isHovered ? Color.secondary.opacity(0.08) : .clear)
-                .overlay(shape.strokeBorder(Color.accentColor.opacity(isGraphed ? 0.8 : 0), lineWidth: 1))
                 .padding(.leading, 12)
         }
         .contentShape(Rectangle())
@@ -210,38 +207,27 @@ struct PairRow: View {
         .onHover { hovering in withAnimation(.easeOut(duration: 0.1)) { isHovered = hovering } }
     }
 
-    /// What deleting this row removes; nil for rows that can't be deleted (the main checkout).
+    private var row: RowID { RowID(repo: repo.url, pair: pair.id) }
+
+    /// What this row can delete; nil for the main checkout.
     private var rowItem: Selectable? { repo.rowItem(pair) }
 
-    private var isSelected: Bool { rowItem.map(model.selection.contains) ?? false }
+    private var isSelected: Bool { model.selection.contains(row) }
 
-    /// The row's branch: the branch itself, or the one its worktree has checked out.
-    private var graphTarget: GraphTarget? {
-        guard let branch = pair.branch, repo.branches.contains(branch) else { return nil }
-        return GraphTarget(repo: repo.url, branch: branch)
-    }
-
-    private var isGraphed: Bool { graphTarget != nil && model.graphTarget == graphTarget }
-
-    /// ⌘-click toggles the row in the bulk selection and ⇧-click extends it. A plain click shows or
-    /// hides the row's graph and, like a list, clears the selection.
+    /// A click selects the row and shows its graph; ⌘ adds or removes it, ⇧ extends a range.
     private func click() {
         let flags = NSEvent.modifierFlags
-        if flags.contains(.command) || flags.contains(.shift) {
-            if let rowItem { model.select(rowItem, mode: flags.contains(.shift) ? .extend : .toggle) }
-            return
-        }
-        model.clearSelection()
-        if let graphTarget { model.toggleGraph(graphTarget) }
+        model.select(row, mode: flags.contains(.shift) ? .extend : flags.contains(.command) ? .toggle : .only)
     }
 
     @ViewBuilder private var rowMenu: some View {
-        if let target = graphTarget {
-            Button(model.graphTarget == target ? "Hide Graph" : "Show Graph") { model.toggleGraph(target) }
+        if !isSelected {
+            Button("Show Graph") { model.select(row, mode: .only) }
         }
         if let rowItem {
             Divider()
-            Button(model.deleteTitle(for: [rowItem]) + "…", role: .destructive) { model.requestDeletion([rowItem]) }
+            // The dialog offers what applies: the branch, the worktree, or both.
+            Button("Delete…", role: .destructive) { model.requestDeletion([rowItem]) }
         }
     }
 
@@ -453,7 +439,7 @@ private struct DeleteSlot: View {
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .disabled(model.running[item.repo] != nil)
-                    .help(model.deleteTitle(for: [item]))
+                    .help("Delete…")
                 }
             }
         }

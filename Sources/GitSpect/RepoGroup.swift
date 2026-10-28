@@ -57,8 +57,8 @@ extension Repo {
         return result
     }
 
-    /// What deleting a row removes: a branch on its own, or a linked worktree together with its
-    /// branch. Nil for the main checkout, which can't be removed.
+    /// What a row can delete: a branch on its own, or a linked worktree (and its branch).
+    /// Nil for the main checkout, which can't be removed.
     func rowItem(_ pair: CheckoutPair) -> Selectable? {
         if let worktree = pair.worktree {
             return worktree.isMain ? nil : .worktree(repo: url, path: worktree.path)
@@ -66,9 +66,6 @@ extension Repo {
         guard let branch = pair.branch, branches.contains(branch) else { return nil }
         return .branch(repo: url, name: branch)
     }
-
-    /// Deletable rows in display order.
-    var selectableRows: [Selectable] { pairs.compactMap(rowItem) }
 
     func matches(_ query: String) -> Bool {
         relativePath.localizedCaseInsensitiveContains(query)
