@@ -145,7 +145,9 @@ struct ContentView: View {
     }
 
     @ViewBuilder private var sidebar: some View {
-        Group {
+        // One container, not a Group: a Group applies the modifiers below to each branch, so
+        // switching to "No Results" would rebuild the search field and drop its focus.
+        ZStack {
             // Folders without repos still show, so they can be removed from the tree.
             if tree.isEmpty && !query.isEmpty {
                 ContentUnavailableView.search(text: query)
