@@ -3,12 +3,11 @@ import SwiftUI
 /// The detail area when nothing is selected: a summary of every scanned repo.
 struct Overview: View {
     @Environment(ScanModel.self) private var model
-    @AppStorage(AppIcon.storageKey) private var icon = AppIcon.dark
 
     var body: some View {
         VStack(spacing: 28) {
             VStack(spacing: 10) {
-                if let image = icon.image {
+                if let image = NSApp.applicationIconImage {
                     Image(nsImage: image)
                         .resizable()
                         .frame(width: 80, height: 80)

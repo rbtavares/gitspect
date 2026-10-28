@@ -37,7 +37,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Needed when launched as a bare executable (`swift run`) rather than a .app bundle.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        AppIcon.current.apply()
         Theme.current.apply()
     }
 

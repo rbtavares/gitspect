@@ -23,7 +23,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_PATH/GitSpect" "$APP/Contents/MacOS/GitSpect"
 # Icons: rendered by scripts/make-icon.swift; delete Assets/ to regenerate.
-# AppIcon.icns (dark) is the bundle icon; the PNGs are the styles selectable in Settings.
+# AppIcon.icns, built from the blue style, is the app icon. The dark and light styles are kept
+# in Assets/ but not shipped.
 if [ ! -f Assets/AppIcon.icns ] || [ ! -f Assets/AppIcon-blue.png ]; then
     mkdir -p Assets
     swiftc -O scripts/make-icon.swift -o .build/make-icon
@@ -33,12 +34,12 @@ if [ ! -f Assets/AppIcon.icns ] || [ ! -f Assets/AppIcon-blue.png ]; then
     ICONSET=.build/AppIcon.iconset
     rm -rf "$ICONSET" && mkdir -p "$ICONSET"
     for s in 16 32 128 256 512; do
-        sips -z $s $s Assets/AppIcon-dark.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
-        sips -z $((s * 2)) $((s * 2)) Assets/AppIcon-dark.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+        sips -z $s $s Assets/AppIcon-blue.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
+        sips -z $((s * 2)) $((s * 2)) Assets/AppIcon-blue.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
     done
     iconutil -c icns "$ICONSET" -o Assets/AppIcon.icns
 fi
-cp Assets/AppIcon.icns Assets/AppIcon-*.png "$APP/Contents/Resources/"
+cp Assets/AppIcon.icns "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

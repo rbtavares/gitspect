@@ -8,9 +8,9 @@ Each release's section becomes its GitHub release notes, so add an entry before 
 
 ## [Unreleased]
 
-### Fixed
+### Changed
 
-- The app icon chosen in Settings now also shows in the Dock while GitSpect isn't running, and in Finder and Spotlight.
+- The app icon is now the blue style everywhere, and the icon choice in Settings is gone: macOS only showed a chosen icon reliably while GitSpect was running.
 
 ## [0.1.1] - 2026-10-28
 
