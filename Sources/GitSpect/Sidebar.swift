@@ -58,7 +58,7 @@ struct Sidebar: View {
                     // folder's chevron sits in the same column as the repo icons.
                     HStack(spacing: 0) {
                         Color.clear.frame(width: FolderRow.chevronWidth)
-                        SidebarRow(repo: repo)
+                        SidebarRow(repo: repo, isSelected: selection == repo.url)
                     }
                     .padding(.leading, FolderRow.indent(depth - 1))
                     .frame(minHeight: Self.rowHeight)
@@ -162,6 +162,7 @@ private struct FolderRow: View {
 
 struct SidebarRow: View {
     let repo: Repo
+    let isSelected: Bool
     @Environment(ScanModel.self) private var model
 
     var body: some View {
@@ -173,6 +174,8 @@ struct SidebarRow: View {
             Label {
                 Text(repo.name)
                     .font(.system(size: 13))
+                    // Quieter than the bold folder names; full strength once selected.
+                    .opacity(isSelected ? 1 : 0.8)
                     .lineLimit(1)
                     .truncationMode(.middle)
             } icon: {
