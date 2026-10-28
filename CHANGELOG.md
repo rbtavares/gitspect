@@ -8,6 +8,10 @@ Each release's section becomes its GitHub release notes, so add an entry before 
 
 ## [Unreleased]
 
+### Fixed
+
+- The app icon chosen in Settings now also shows in the Dock while GitSpect isn't running, and in Finder and Spotlight.
+
 ## [0.1.1] - 2026-10-28
 
 First published release: 0.1.0 was tagged, but its build failed. Everything 0.1.0 lists is here.

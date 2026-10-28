@@ -87,7 +87,7 @@ private struct AppearanceSettings: View {
             } header: {
                 Text("App Icon")
             } footer: {
-                Text("Changes the Dock icon. Finder always shows the Dark icon.")
+                Text("Used in the Dock, Finder and Spotlight, also while GitSpect isn't running.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
