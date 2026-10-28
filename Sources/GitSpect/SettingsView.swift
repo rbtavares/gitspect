@@ -63,9 +63,20 @@ private struct FoldersSettings: View {
 
 private struct AppearanceSettings: View {
     @AppStorage(AppIcon.storageKey) private var icon = AppIcon.dark
+    @AppStorage(Theme.storageKey) private var theme = Theme.system
 
     var body: some View {
         Form {
+            Section {
+                Picker("Theme", selection: $theme) {
+                    ForEach(Theme.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+            } footer: {
+                Text("System follows the macOS appearance setting.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
             Section {
                 HStack(spacing: 16) {
                     ForEach(AppIcon.allCases) { option in
@@ -82,8 +93,9 @@ private struct AppearanceSettings: View {
             }
         }
         .formStyle(.grouped)
-        .frame(minHeight: 220)
+        .frame(minHeight: 320)
         .onChange(of: icon) { icon.apply() }
+        .onChange(of: theme) { theme.apply() }
     }
 }
 
