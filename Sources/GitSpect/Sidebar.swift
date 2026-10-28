@@ -48,8 +48,8 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
-        // Compact rows regardless of the system's sidebar icon size setting.
-        // Compact rows; the names are set back to 13pt on the rows themselves.
+        // Compact rows regardless of the system's sidebar icon size setting. Small rows shrink text
+        // to 11pt, so folder and repo names set 13pt on their own text.
         .environment(\.sidebarRowSize, .small)
     }
 
@@ -96,11 +96,16 @@ private struct FolderRow: View {
                 .foregroundStyle(.secondary)
                 .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 .frame(width: Self.chevronWidth)
-            Label(title, systemImage: "folder.fill")
-                // Small sidebar rows shrink text to 11pt; names stay at the standard sidebar size.
-                .font(.system(size: 13))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            Label {
+                // On the text itself, like repo names: the sidebar's label style overrides a font
+                // set on the whole Label.
+                Text(title)
+                    .font(.system(size: 13))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } icon: {
+                Image(systemName: "folder.fill")
+            }
             Spacer(minLength: 0)
         }
         .padding(.leading, Self.indent(depth))
