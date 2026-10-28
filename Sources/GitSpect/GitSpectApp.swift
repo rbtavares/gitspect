@@ -4,11 +4,19 @@ import SwiftUI
 @main
 struct GitSpectApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @AppStorage("showsOutput") private var showsOutput = false
 
     var body: some Scene {
         WindowGroup("GitSpect") {
             ContentView()
                 .frame(minWidth: 640, minHeight: 400)
+        }
+        .commands {
+            // View menu, next to Show/Hide Sidebar, like Xcode's debug area.
+            CommandGroup(after: .sidebar) {
+                Button(showsOutput ? "Hide Output" : "Show Output") { showsOutput.toggle() }
+                    .keyboardShortcut("y", modifiers: [.command, .shift])
+            }
         }
         Settings {
             SettingsView()

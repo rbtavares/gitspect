@@ -79,12 +79,6 @@ struct ContentView: View {
                 }
                 .disabled(model.repos.isEmpty || model.fetchAllProgress != nil)
                 .help("git fetch --all --prune in every repo")
-                Button { showsOutput.toggle() } label: {
-                    Label("Output", systemImage: "rectangle.bottomthird.inset.filled")
-                }
-                .keyboardShortcut("y", modifiers: [.command, .shift])
-                .foregroundStyle(!showsOutput && model.log.last?.status == .failed ? .red : .primary)
-                .help(showsOutput ? "Hide output (⇧⌘Y)" : "Show output (⇧⌘Y)")
             }
         }
     }
