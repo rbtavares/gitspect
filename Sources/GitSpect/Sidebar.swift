@@ -8,7 +8,6 @@ struct Sidebar: View {
     @Binding var collapsed: Set<String>
     @Environment(ScanModel.self) private var model
     @State private var trashRequest: RepoGroup?
-    @State private var lastSelectionChange = Date.distantPast
 
     static let rowHeight: CGFloat = 22
 
@@ -64,14 +63,13 @@ struct Sidebar: View {
                     .padding(.leading, FolderRow.indent(depth - 1))
                     .frame(minHeight: Self.rowHeight)
                     .contentShape(Rectangle())
-                    .simultaneousGesture(TapGesture().onEnded { clicked(repo.url) })
+                    .onTapGesture { clicked(repo.url) }
                     .tag(repo.url)
 
                 }
             }
         }
         .listStyle(.sidebar)
-        .onChange(of: selection) { lastSelectionChange = .now }
         // Rows set their own (compact) height.
         .environment(\.defaultMinListRowHeight, 1)
         .confirmationDialog(
@@ -105,11 +103,12 @@ struct Sidebar: View {
         return rows
     }
 
-    /// Clicking the selected repo or folder again deselects it. The list selects on mouse-down,
-    /// before the click ends, so a selection made just now was this click's, not an earlier one.
+    /// Rows handle their own clicks: one selects the row, and clicking the selected row again
+    /// deselects it. (A gesture alongside the list's own click handling stops it selecting at all.)
+    /// The list still draws the highlight and moves the selection with the arrow keys.
     private func clicked(_ url: URL?) {
-        guard let url, selection == url, Date.now.timeIntervalSince(lastSelectionChange) > 0.5 else { return }
-        selection = nil
+        guard let url else { return }
+        selection = selection == url ? nil : url
     }
 
     private func moveToTrash(_ group: RepoGroup) {
@@ -169,7 +168,7 @@ private struct FolderRow: View {
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
-            .simultaneousGesture(TapGesture().onEnded(click))
+            .onTapGesture(perform: click)
         }
         .padding(.leading, Self.indent(depth))
         .frame(minHeight: Sidebar.rowHeight)
