@@ -49,6 +49,7 @@ struct Sidebar: View {
         }
         .listStyle(.sidebar)
         // Compact rows regardless of the system's sidebar icon size setting.
+        // Compact rows; the names are set back to 13pt on the rows themselves.
         .environment(\.sidebarRowSize, .small)
     }
 
@@ -96,6 +97,8 @@ private struct FolderRow: View {
                 .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 .frame(width: Self.chevronWidth)
             Label(title, systemImage: "folder.fill")
+                // Small sidebar rows shrink text to 11pt; names stay at the standard sidebar size.
+                .font(.system(size: 13))
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
@@ -121,6 +124,7 @@ struct SidebarRow: View {
         HStack(spacing: 6) {
             Label {
                 Text(repo.name)
+                    .font(.system(size: 13))
                     .lineLimit(1)
                     .truncationMode(.middle)
             } icon: {
