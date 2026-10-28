@@ -1,8 +1,9 @@
 name: CI
 
-# Checks that the app still builds. Runs on pull requests only: macOS runner minutes are
-# billed at 10x for private repos, and releases build on their own.
+# Checks that the app still builds, on pull requests and on every push to main.
 on:
+  push:
+    branches: [main]
   pull_request:
 
 concurrency:
