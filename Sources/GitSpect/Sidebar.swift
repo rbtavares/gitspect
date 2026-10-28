@@ -9,18 +9,23 @@ struct Sidebar: View {
     @Environment(ScanModel.self) private var model
     @State private var trashRequest: RepoGroup?
 
+    static let rowHeight: CGFloat = 24
+
     /// The tree flattened into visible rows. Nested DisclosureGroups in a List leave stale
     /// rows behind when collapsed, so expansion and indentation are handled here instead.
     private enum Row: Identifiable {
         case root(RootNode)
         case folder(RepoGroup)
         case repo(Repo, depth: Int)
+        /// Breathing room before a folder.
+        case gap(before: String)
 
         var id: String {
             switch self {
             case .root(let node): "root:" + node.root.path
             case .folder(let group): "folder:" + group.id
             case .repo(let repo, _): "repo:" + repo.url.path
+            case .gap(let before): "gap:" + before
             }
         }
     }
@@ -60,11 +65,19 @@ struct Sidebar: View {
                         SidebarRow(repo: repo)
                     }
                     .padding(.leading, FolderRow.indent(depth - 1))
+                    .frame(minHeight: Self.rowHeight)
                     .tag(repo.url)
+                case .gap:
+                    Color.clear
+                        .frame(height: 8)
+                        .selectionDisabled()
+                        .accessibilityHidden(true)
                 }
             }
         }
         .listStyle(.sidebar)
+        // Rows set their own height, so the gaps between folders can be shorter than a row.
+        .environment(\.defaultMinListRowHeight, 1)
         .confirmationDialog(
             "Move “\(trashRequest?.path ?? "")” to the Trash?",
             isPresented: Binding(get: { trashRequest != nil }, set: { if !$0 { trashRequest = nil } }),
@@ -82,12 +95,14 @@ struct Sidebar: View {
     private var rows: [Row] {
         var rows: [Row] = []
         for node in roots {
+            if !rows.isEmpty { rows.append(.gap(before: node.root.path)) }
             rows.append(.root(node))
             guard isExpanded(node.root.path) else { continue }
             for group in node.groups {
                 if group.path.isEmpty {
                     rows += group.repos.map { .repo($0, depth: 1) }
                 } else {
+                    rows.append(.gap(before: group.id))
                     rows.append(.folder(group))
                     if isExpanded(group.id) { rows += group.repos.map { .repo($0, depth: 2) } }
                 }
@@ -150,6 +165,7 @@ private struct FolderRow: View {
             Spacer(minLength: 0)
         }
         .padding(.leading, Self.indent(depth))
+        .frame(minHeight: Sidebar.rowHeight)
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
     }
 }
