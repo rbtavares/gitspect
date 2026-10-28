@@ -20,6 +20,7 @@ First release.
 - Click a branch to open its commit graph beside the repository, together with its upstream's history.
 - Click a commit in the graph to see its full message, author, parents and changed files.
 - Fetch one repository or all of them in parallel, fast-forward pull, and push.
+- Pull All fast-forwards every branch that is behind its upstream, across all repositories.
 - Delete branches and remove worktrees, one at a time or in bulk, with a confirmation before anything is forced.
 - Output panel with the live output of every git command GitSpect runs.
 - Settings for scanned folders, light/dark/system theme and the app icon.

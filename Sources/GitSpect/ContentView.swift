@@ -89,10 +89,29 @@ struct ContentView: View {
                             .labelStyle(.titleAndIcon)
                     }
                 }
-                .disabled(model.repos.isEmpty || model.fetchAllProgress != nil)
+                .disabled(model.repos.isEmpty || model.fetchAllProgress != nil || model.pullAllProgress != nil)
                 .help("git fetch --all --prune in every repo")
+                pullAllButton
             }
         }
+    }
+
+    private var pullAllButton: some View {
+        let pullable = model.pullableBranches
+        let branches = pullable.reduce(0) { $0 + $1.branches.count }
+        return Button(action: model.pullAll) {
+            if let progress = model.pullAllProgress {
+                Label("Pulling \(progress.done)/\(progress.total)", systemImage: "arrow.down.to.line.circle")
+                    .labelStyle(.titleAndIcon)
+            } else {
+                Label("Pull All", systemImage: "arrow.down.to.line.circle")
+                    .labelStyle(.titleAndIcon)
+            }
+        }
+        .disabled(branches == 0 || model.pullAllProgress != nil || model.fetchAllProgress != nil)
+        .help(branches == 0
+              ? "Nothing to pull. Fetch All first to check for new commits."
+              : "Fast-forward \(branches) branch\(branches == 1 ? "" : "es") in \(pullable.count) repo\(pullable.count == 1 ? "" : "s") that \(branches == 1 ? "is" : "are") behind. Never merges or rebases.")
     }
 
     /// Folder controls live with the folder tree, Finder/Xcode style.

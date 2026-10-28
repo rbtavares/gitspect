@@ -73,6 +73,7 @@ final class ScanModel {
     private(set) var running: [URL: RepoOperation] = [:]
     private(set) var errors: [URL: String] = [:]
     private(set) var fetchAllProgress: (done: Int, total: Int)?
+    private(set) var pullAllProgress: (done: Int, total: Int)?
     private(set) var selection: Set<Selectable> = []
     private var selectionAnchor: Selectable?
     /// The branch shown in the graph pane, if it's open.
@@ -146,7 +147,8 @@ final class ScanModel {
     }
 
     func fetchAll() {
-        guard fetchAllProgress == nil else { return }
+        // Not alongside Pull All: a repo busy with one skips the other's command.
+        guard fetchAllProgress == nil, pullAllProgress == nil else { return }
         let targets = repos.filter { !$0.isLocalOnly }
         fetchAllProgress = (0, targets.count)
         Task {
@@ -160,18 +162,48 @@ final class ScanModel {
 
     /// Fast-forward only: never merges or rebases.
     func pull(_ repo: Repo, branch: String) {
+        Task { await pullBranch(repo, branch: branch) }
+    }
+
+    private func pullBranch(_ repo: Repo, branch: String) async {
         guard let status = statuses[repo.url]?[branch] else { return }
+        await perform(.pull(branch: branch), on: repo.url) {
+            if let worktree = repo.worktrees.first(where: { $0.branch == branch && !$0.isMissing }) {
+                _ = try await runLogged(
+                    ["pull", "--ff-only"], in: URL(fileURLWithPath: worktree.path), repo: repo, timeout: Self.networkTimeout
+                )
+            } else {
+                // Not checked out anywhere: fast-forward the ref to the already-fetched upstream.
+                _ = try await runLogged(["fetch", ".", "\(status.upstreamRef):refs/heads/\(branch)"], in: repo.url, repo: repo)
+            }
+        }
+    }
+
+    /// Branches behind their upstream that can be fast-forwarded (not diverged), by repo.
+    var pullableBranches: [(repo: Repo, branches: [String])] {
+        repos.compactMap { repo in
+            let branches = (statuses[repo.url] ?? [:])
+                .filter { $0.value.behind > 0 && $0.value.ahead == 0 && !$0.value.isGone }
+                .keys
+                .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            return branches.isEmpty ? nil : (repo, branches)
+        }
+    }
+
+    /// Fast-forwards every pullable branch. Repos run in parallel; one repo's branches run in turn,
+    /// since git can't safely run two commands on a repo at once.
+    func pullAll() {
+        guard pullAllProgress == nil, fetchAllProgress == nil else { return }
+        let targets = pullableBranches
+        pullAllProgress = (0, targets.reduce(0) { $0 + $1.branches.count })
         Task {
-            await perform(.pull(branch: branch), on: repo.url) {
-                if let worktree = repo.worktrees.first(where: { $0.branch == branch && !$0.isMissing }) {
-                    _ = try await runLogged(
-                        ["pull", "--ff-only"], in: URL(fileURLWithPath: worktree.path), repo: repo, timeout: Self.networkTimeout
-                    )
-                } else {
-                    // Not checked out anywhere: fast-forward the ref to the already-fetched upstream.
-                    _ = try await runLogged(["fetch", ".", "\(status.upstreamRef):refs/heads/\(branch)"], in: repo.url, repo: repo)
+            await forEach(targets) { target in
+                for branch in target.branches {
+                    await self.pullBranch(target.repo, branch: branch)
+                    self.pullAllProgress?.done += 1
                 }
             }
+            pullAllProgress = nil
         }
     }
 
