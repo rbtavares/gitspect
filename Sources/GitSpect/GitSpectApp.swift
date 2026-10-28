@@ -14,6 +14,9 @@ struct GitSpectApp: App {
                 .environment(model)
                 .frame(minWidth: 640, minHeight: 400)
         }
+        // Full-height toolbar without the title text: the selected repo is shown there instead.
+        // (Removing the title from a default toolbar shrinks it to the compact height.)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             // View menu, next to Show/Hide Sidebar, like Xcode's debug area.
             CommandGroup(after: .sidebar) {

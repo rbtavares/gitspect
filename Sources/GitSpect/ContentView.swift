@@ -54,7 +54,8 @@ struct ContentView: View {
         } message: { request in
             Text(dialogMessage(request))
         }
-        .toolbarRepoTitle(selectedRepo?.name ?? "GitSpect")
+        // Hidden from the toolbar by the window's style (RepoTitle shows instead); still used by the Window menu.
+        .navigationTitle(selectedRepo?.name ?? "GitSpect")
         .onChange(of: selectedPath) {
             model.clearSelection()
             model.closeGraph()
@@ -288,17 +289,5 @@ private struct SelectionBar: View {
         .background(.regularMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
-    }
-}
-
-private extension View {
-    /// The toolbar shows the selected repo (`RepoTitle`) in place of a title. On macOS 15+ the window
-    /// keeps its title for the Window menu; macOS 14 can't hide it from the toolbar, so it's left empty.
-    @ViewBuilder func toolbarRepoTitle(_ title: String) -> some View {
-        if #available(macOS 15, *) {
-            navigationTitle(title).toolbar(removing: .title)
-        } else {
-            navigationTitle("")
-        }
     }
 }
