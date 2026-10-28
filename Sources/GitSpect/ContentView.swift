@@ -9,6 +9,10 @@ struct ContentView: View {
     /// Left edges, in window coordinates, of the list's "Branches" header and the toolbar's repo title.
     @State private var listTextX: CGFloat?
     @State private var titleX: CGFloat?
+    /// The shift in use. Only updated once measurements have settled: mid-animation they're
+    /// stale or change in steps, which made the title jump.
+    @State private var titleShift: CGFloat = 0
+    @State private var alignTask: Task<Void, Never>?
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("outputHeight") private var outputHeight = 200.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -82,6 +86,13 @@ struct ContentView: View {
         }
         // Hidden from the toolbar by the window's style (RepoTitle shows instead); still used by the Window menu.
         .navigationTitle(selectedRepo?.name ?? "GitSpect")
+        // The sidebar starting to move: back to where macOS puts the title for the slide itself.
+        .onChange(of: columnVisibility) {
+            titleShift = 0
+            scheduleTitleAlignment()
+        }
+        .onChange(of: listTextX) { scheduleTitleAlignment() }
+        .onChange(of: titleX) { scheduleTitleAlignment() }
         .onChange(of: selectedPath) {
             model.clearSelection()
         }
@@ -90,9 +101,6 @@ struct ContentView: View {
                 if let repo = selectedRepo {
                     RepoTitle(repo: repo)
                         .offset(x: titleShift)
-                        // macOS moves toolbar items in steps while the sidebar slides; easing the
-                        // shift turns those steps into one glide instead of a jitter.
-                        .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: titleShift)
                         // Measures where macOS placed the item (the offset only moves the drawing).
                         .background(WindowXReader { titleX = $0 })
                 }
@@ -330,9 +338,20 @@ struct ContentView: View {
     /// Where macOS places toolbar items depends on the window (full screen or not, sidebar width),
     /// so both are measured rather than assumed. With the sidebar collapsed the title stays put:
     /// lining up would slide it under the sidebar button.
-    private var titleShift: CGFloat {
+    private var measuredTitleShift: CGFloat {
         guard columnVisibility != .detailOnly, let listTextX, let titleX else { return 0 }
+        // titleX is the item's own position, without the shift (that only moves the drawing).
         return listTextX - titleX
+    }
+
+    /// Waits for the layout to stop changing, then glides the title into line.
+    private func scheduleTitleAlignment() {
+        alignTask?.cancel()
+        alignTask = Task {
+            try? await Task.sleep(for: .seconds(0.35))
+            guard !Task.isCancelled else { return }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { titleShift = measuredTitleShift }
+        }
     }
 
     private var selectedRepo: Repo? { model.repos.first { $0.url.path == selectedPath } }

@@ -63,8 +63,8 @@ struct Sidebar: View {
                         SidebarRow(repo: repo, isSelected: selection == repo.url)
                     }
                     .padding(.leading, FolderRow.indent(depth - 1))
-                    .frame(minHeight: Self.rowHeight)
-                    .contentShape(Rectangle())
+                    .frame(maxWidth: .infinity, minHeight: Self.rowHeight, alignment: .leading)
+                    .clickableAcrossRow()
                     .onTapGesture { clicked(repo.url) }
                     .listRowBackground(highlight(repo.url))
 
@@ -176,7 +176,7 @@ private struct FolderRow: View {
                     .padding(.leading, 4)
                 Spacer(minLength: 0)
             }
-            .contentShape(Rectangle())
+            .clickableAcrossRow()
             .onTapGesture(perform: click)
         }
         .padding(.leading, Self.indent(depth))
@@ -262,5 +262,15 @@ private struct SidebarIcon: View {
         Image(systemName: systemName)
             .font(.system(size: 13))
             .frame(width: 18)
+    }
+}
+
+private extension View {
+    /// The list pads each row above and below its content; clicks there would miss the row.
+    /// This stretches the clickable area over that padding without changing the layout.
+    func clickableAcrossRow() -> some View {
+        padding(.vertical, 4)
+            .contentShape(Rectangle())
+            .padding(.vertical, -4)
     }
 }
