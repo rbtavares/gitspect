@@ -270,14 +270,15 @@ private struct GraphCell: View {
     let row: GraphRow
 
     /// Height of a row's first line, which the commit's dot is centred on.
-    static let rowHeight: CGFloat = 24
+    nonisolated static let rowHeight: CGFloat = 24
     /// Extra height for the line of ref badges.
     static let refsHeight: CGFloat = 18
 
     static func height(for commit: GraphCommit) -> CGFloat {
         commit.refs.isEmpty ? rowHeight : rowHeight + refsHeight
     }
-    static let laneWidth: CGFloat = 14
+    // Read inside the Canvas renderer, which isn't main-actor isolated (Swift 6.1 rejects it otherwise).
+    nonisolated static let laneWidth: CGFloat = 14
     /// Very wide histories are clipped rather than squeezing the commit text out.
     static let maxLanes = 12
 
