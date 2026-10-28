@@ -21,6 +21,9 @@ struct RepoGroup: Identifiable, Sendable {
 
     var id: String { root.path + "\n" + path }
 
+    /// The folder on disk: the parent of its repos (a group always has at least one).
+    var url: URL? { repos.first?.url.deletingLastPathComponent() }
+
     static func grouping(_ repos: [Repo], in root: URL) -> [RepoGroup] {
         let byParent = Dictionary(grouping: repos) { repo -> String in
             let parent = (repo.relativePath as NSString).deletingLastPathComponent

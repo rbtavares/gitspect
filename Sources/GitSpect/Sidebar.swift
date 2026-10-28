@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// A tree: each added folder, its parent folders (orgs), then repos with their at-a-glance counts.
@@ -6,6 +7,7 @@ struct Sidebar: View {
     @Binding var selection: URL?
     @Binding var collapsed: Set<String>
     @Environment(ScanModel.self) private var model
+    @State private var trashRequest: RepoGroup?
 
     /// The tree flattened into visible rows. Nested DisclosureGroups in a List leave stale
     /// rows behind when collapsed, so expansion and indentation are handled here instead.
@@ -32,22 +34,45 @@ struct Sidebar: View {
                               isExpanded: isExpanded(node.root.path)) { toggle(node.root.path) }
                         .fontWeight(.semibold)
                         .help(node.root.path)
+                        .tag(node.root)
                         .contextMenu {
                             PathActions(path: node.root.path)
                             Divider()
-                            Button("Remove Folder") { model.remove(root: node.root) }
+                            // Added folders are only taken out of GitSpect, never deleted.
+                            Button("Remove from GitSpect") { model.remove(root: node.root) }
                         }
                 case .folder(let group):
                     FolderRow(title: group.path, depth: 1,
                               isExpanded: isExpanded(group.id)) { toggle(group.id) }
+                        .tag(group.url)
+                        .contextMenu {
+                            if let url = group.url {
+                                PathActions(path: url.path)
+                                Divider()
+                                Button("Move to Trash…", role: .destructive) { trashRequest = group }
+                            }
+                        }
                 case .repo(let repo, let depth):
-                    SidebarRow(repo: repo)
-                        .padding(.leading, FolderRow.indent(depth) + FolderRow.chevronWidth)
-                        .tag(repo.url)
+                    // The same indent and chevron slot as a folder row, so icons line up.
+                    HStack(spacing: 0) {
+                        Color.clear.frame(width: FolderRow.chevronWidth)
+                        SidebarRow(repo: repo)
+                    }
+                    .padding(.leading, FolderRow.indent(depth))
+                    .tag(repo.url)
                 }
             }
         }
         .listStyle(.sidebar)
+        .confirmationDialog(
+            "Move “\(trashRequest?.path ?? "")” to the Trash?",
+            isPresented: Binding(get: { trashRequest != nil }, set: { if !$0 { trashRequest = nil } }),
+            presenting: trashRequest
+        ) { group in
+            Button("Move to Trash", role: .destructive) { moveToTrash(group) }
+        } message: { group in
+            Text("It holds \(group.repos.count) repositor\(group.repos.count == 1 ? "y" : "ies"), including any uncommitted or unpushed work in them. You can put it back from the Trash.")
+        }
         // Compact rows regardless of the system's sidebar icon size setting. Small rows shrink text
         // to 11pt, so folder and repo names set 13pt on their own text.
         .environment(\.sidebarRowSize, .small)
@@ -70,6 +95,19 @@ struct Sidebar: View {
         return rows
     }
 
+    private func moveToTrash(_ group: RepoGroup) {
+        guard let url = group.url else { return }
+        Task {
+            do {
+                _ = try await NSWorkspace.shared.recycle([url])
+            } catch {
+                NSAlert(error: error).runModal()
+            }
+            if selection == url { selection = nil }
+            model.rescan()
+        }
+    }
+
     private func isExpanded(_ id: String) -> Bool { !collapsed.contains(id) }
 
     private func toggle(_ id: String) {
@@ -79,7 +117,7 @@ struct Sidebar: View {
     }
 }
 
-/// A root or org folder: not selectable; a click anywhere on it opens or closes it.
+/// A root or org folder. Selectable like a repo; only its chevron opens and closes it.
 private struct FolderRow: View {
     static let chevronWidth: CGFloat = 14
     static func indent(_ depth: Int) -> CGFloat { CGFloat(depth) * 14 }
@@ -91,11 +129,16 @@ private struct FolderRow: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.secondary)
-                .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                .frame(width: Self.chevronWidth)
+            Button(action: toggle) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .frame(width: Self.chevronWidth, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isExpanded ? "Collapse" : "Expand")
             Label {
                 // On the text itself, like repo names: the sidebar's label style overrides a font
                 // set on the whole Label.
@@ -109,10 +152,6 @@ private struct FolderRow: View {
             Spacer(minLength: 0)
         }
         .padding(.leading, Self.indent(depth))
-        .contentShape(Rectangle())
-        .onTapGesture(perform: toggle)
-        .selectionDisabled()
-        .accessibilityAddTraits(.isButton)
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
     }
 }

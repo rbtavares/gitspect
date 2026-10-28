@@ -221,10 +221,25 @@ struct ContentView: View {
                 }
                 .animation(reduceMotion ? nil : .spring(duration: 0.3, bounce: 0),
                            value: model.deletionItems(model.selection).isEmpty)
+        } else if let folder = selectedFolder {
+            FolderSummary(url: folder.url, repoCount: folder.repoCount)
         } else {
             ContentUnavailableView("Select a Repository", systemImage: "sidebar.left",
                                    description: Text("Choose a repo in the sidebar to see its branches and worktrees."))
         }
+    }
+
+    /// A folder selected in the sidebar: an added folder, or a parent folder of repos inside one.
+    private var selectedFolder: (url: URL, repoCount: Int)? {
+        for node in RootNode.tree(roots: model.roots, repos: model.repos) {
+            if node.root.path == selectedPath {
+                return (node.root, node.groups.reduce(0) { $0 + $1.repos.count })
+            }
+            if let group = node.groups.first(where: { $0.url?.path == selectedPath }), let url = group.url {
+                return (url, group.repos.count)
+            }
+        }
+        return nil
     }
 
     // MARK: - Deletion dialog
@@ -357,5 +372,21 @@ private struct FadeInOnAppear: ViewModifier {
             .onAppear {
                 withAnimation(.easeOut(duration: 0.2).delay(delay)) { isVisible = true }
             }
+    }
+}
+
+/// What the detail area shows for a selected folder.
+private struct FolderSummary: View {
+    let url: URL
+    let repoCount: Int
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(url.lastPathComponent, systemImage: "folder.fill")
+        } description: {
+            Text("\(repoCount) repositor\(repoCount == 1 ? "y" : "ies")\n\((url.path as NSString).abbreviatingWithTildeInPath)")
+        } actions: {
+            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        }
     }
 }
