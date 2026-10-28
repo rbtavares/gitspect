@@ -1,12 +1,27 @@
 #!/bin/sh
 # Builds a release binary and wraps it in GitSpect.app.
+#
+# VERSION  marketing version (default: latest vX.Y.Z tag without the "v", or 0.0.0)
+# ARCHS    architectures to build, e.g. "arm64 x86_64" for a universal app (default: this Mac's)
 set -eu
 cd "$(dirname "$0")"
-swift build -c release
+
+LATEST_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo v0.0.0)
+VERSION=${VERSION:-${LATEST_TAG#v}}
+# Build number: commit count, so every build from a later commit sorts higher.
+BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
+
+ARCH_FLAGS=""
+for arch in ${ARCHS:-}; do ARCH_FLAGS="$ARCH_FLAGS --arch $arch"; done
+# shellcheck disable=SC2086 # ARCH_FLAGS is intentionally word-split.
+swift build -c release $ARCH_FLAGS
+# shellcheck disable=SC2086
+BIN_PATH=$(swift build -c release $ARCH_FLAGS --show-bin-path)
+
 APP=GitSpect.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$(swift build -c release --show-bin-path)/GitSpect" "$APP/Contents/MacOS/GitSpect"
+cp "$BIN_PATH/GitSpect" "$APP/Contents/MacOS/GitSpect"
 # Icons: rendered by scripts/make-icon.swift; delete Assets/ to regenerate.
 # AppIcon.icns (dark) is the bundle icon; the PNGs are the styles selectable in Settings.
 if [ ! -f Assets/AppIcon.icns ] || [ ! -f Assets/AppIcon-blue.png ]; then
@@ -34,13 +49,19 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleExecutable</key><string>GitSpect</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>$VERSION</string>
+    <key>CFBundleVersion</key><string>$BUILD</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+    <key>NSHumanReadableCopyright</key><string>Copyright © 2026 rbtavares. MIT License.</string>
     <key>NSHighResolutionCapable</key><true/>
+    <!-- Shown in the macOS prompts when scanning folders in these locations. -->
+    <key>NSDocumentsFolderUsageDescription</key><string>GitSpect scans the folders you add for git repositories.</string>
+    <key>NSDesktopFolderUsageDescription</key><string>GitSpect scans the folders you add for git repositories.</string>
+    <key>NSDownloadsFolderUsageDescription</key><string>GitSpect scans the folders you add for git repositories.</string>
 </dict>
 </plist>
 PLIST
 xattr -cr "$APP"
 codesign --force --sign - "$APP"
-echo "Built $APP"
+echo "Built $APP $VERSION ($BUILD)"
