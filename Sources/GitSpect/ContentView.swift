@@ -68,7 +68,6 @@ struct ContentView: View {
         .onChange(of: selectedPath) { model.clearSelection() }
         .toolbar {
             ToolbarItemGroup {
-                if model.isScanning { ProgressView().controlSize(.small) }
                 Button(action: model.fetchAll) {
                     if let progress = model.fetchAllProgress {
                         Label("Fetching \(progress.done)/\(progress.total)", systemImage: "arrow.down.circle")
@@ -86,12 +85,28 @@ struct ContentView: View {
                 .keyboardShortcut("y", modifiers: [.command, .shift])
                 .foregroundStyle(!showsOutput && model.log.last?.status == .failed ? .red : .primary)
                 .help(showsOutput ? "Hide output (⇧⌘Y)" : "Show output (⇧⌘Y)")
-                Button(action: model.rescan) { Label("Rescan", systemImage: "arrow.clockwise") }
-                    .disabled(model.roots.isEmpty || model.isScanning)
-                Button(action: addFolders) { Label("Add Folders…", systemImage: "folder.badge.plus") }
-                    .help("Add folders to scan for repositories")
             }
         }
+    }
+
+    /// Folder controls live with the folder tree, Finder/Xcode style.
+    private var sidebarBar: some View {
+        HStack(spacing: 4) {
+            Button(action: addFolders) { Image(systemName: "plus") }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+                .help("Add folders to scan for repositories (⇧⌘O)")
+            Spacer()
+            if model.isScanning { ProgressView().controlSize(.mini) }
+            Button(action: model.rescan) { Image(systemName: "arrow.clockwise") }
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(model.roots.isEmpty || model.isScanning)
+                .help("Rescan folders (⌘R)")
+        }
+        .buttonStyle(.borderless)
+        .font(.system(size: 12, weight: .medium))
+        .padding(.horizontal, 12)
+        .frame(height: 28)
+        .overlay(alignment: .top) { Divider() }
     }
 
     @ViewBuilder private var sidebar: some View {
@@ -110,6 +125,8 @@ struct ContentView: View {
                 )
             }
         }
+        .frame(maxHeight: .infinity)
+        .safeAreaInset(edge: .bottom, spacing: 0) { sidebarBar }
         .searchable(text: $query, placement: .sidebar, prompt: "Filter repos, branches, worktrees")
     }
 
