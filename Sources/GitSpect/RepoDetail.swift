@@ -168,8 +168,8 @@ struct PairRow: View {
                 .padding(.leading, 12)
         }
         .contentShape(Rectangle())
-        // Clicks between the cells; clicks on a cell are handled there, along with selection.
-        .onTapGesture { toggleGraph() }
+        // Clicks between the cells; cells forward plain clicks here and handle ⌘/⇧ selection.
+        .onTapGesture { click() }
         .onHover { hovering in withAnimation(.easeOut(duration: 0.1)) { isHovered = hovering } }
     }
 
@@ -181,7 +181,9 @@ struct PairRow: View {
 
     private var isGraphed: Bool { graphTarget != nil && model.graphTarget == graphTarget }
 
-    private func toggleGraph() {
+    /// A plain click shows or hides the row's graph and, like a list, clears the bulk selection.
+    private func click() {
+        model.clearSelection()
         if let graphTarget { model.toggleGraph(graphTarget) }
     }
 
@@ -216,7 +218,7 @@ struct PairRow: View {
                            help: "Delete local branch \(branch)")
             }
         }
-        .selectable(branchItem, isHovered: isHovered, onClick: toggleGraph)
+        .selectable(branchItem, isHovered: isHovered, onClick: click)
         .contextMenu {
             if let target = graphTarget {
                 Button(model.graphTarget == target ? "Hide Graph" : "Show Graph") { model.toggleGraph(target) }
@@ -264,7 +266,7 @@ struct PairRow: View {
             }
         }
         .help(pair.worktree?.path ?? "")
-        .selectable(worktreeItem, isHovered: isHovered, onClick: toggleGraph)
+        .selectable(worktreeItem, isHovered: isHovered, onClick: click)
         .contextMenu {
             if let worktree = pair.worktree {
                 if let target = graphTarget {
@@ -393,11 +395,12 @@ private struct PillButtonStyle: ButtonStyle {
     }
 }
 
-/// Click to select (⌘ toggles, ⇧ extends); selected cells get an accent fill.
+/// ⌘-click toggles a cell in the bulk selection and ⇧-click extends it; selected cells get an
+/// accent fill. A plain click is the row's (showing its graph), so it doesn't select.
 private struct SelectableCell: ViewModifier {
     let item: Selectable?
     let isHovered: Bool
-    /// Runs on a click without ⌘ or ⇧, whether or not the cell is selectable.
+    /// Runs on a click without ⌘ or ⇧.
     let onClick: (() -> Void)?
     @Environment(ScanModel.self) private var model
 
@@ -412,9 +415,9 @@ private struct SelectableCell: ViewModifier {
             .onTapGesture {
                 let flags = NSEvent.modifierFlags
                 let extends = flags.contains(.shift), toggles = flags.contains(.command)
-                if !extends && !toggles { onClick?() }
+                guard extends || toggles else { onClick?(); return }
                 guard let item else { return }
-                model.select(item, mode: extends ? .extend : toggles ? .toggle : .only)
+                model.select(item, mode: extends ? .extend : .toggle)
             }
     }
 }

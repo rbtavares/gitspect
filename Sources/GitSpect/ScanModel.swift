@@ -309,14 +309,11 @@ final class ScanModel {
 
     // MARK: - Selection
 
-    enum SelectMode { case only, toggle, extend }
+    enum SelectMode { case toggle, extend }
 
-    /// Finder-style: click selects one, ⌘ toggles, ⇧ extends a range of the same kind within one repo.
+    /// ⌘-click toggles an item; ⇧-click extends a range of the same kind within one repo.
     func select(_ item: Selectable, mode: SelectMode) {
         switch mode {
-        case .only:
-            selection = selection == [item] ? [] : [item]
-            selectionAnchor = item
         case .toggle:
             if selection.remove(item) == nil { selection.insert(item) }
             selectionAnchor = item
