@@ -10,6 +10,8 @@ struct RepoDetail: View {
     @AppStorage("graphFraction") private var graphFraction = 0.5
 
     static let columnGap: CGFloat = 28
+    /// The system's alternating row colour, as in Finder's list view.
+    static let stripe = Color(nsColor: NSColor.alternatingContentBackgroundColors.last ?? .clear)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -36,7 +38,12 @@ struct RepoDetail: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
                 Section {
-                    ForEach(repo.pairs) { PairRow(pair: $0, repo: repo).padding(.trailing, 12) }
+                    // Finder-style stripes on every other row, full width under the highlights.
+                    ForEach(Array(repo.pairs.enumerated()), id: \.element.id) { index, pair in
+                        PairRow(pair: pair, repo: repo)
+                            .padding(.trailing, 12)
+                            .background(index.isMultiple(of: 2) ? Color.clear : Self.stripe)
+                    }
                 } header: {
                     columnTitles
                 }
