@@ -9,7 +9,7 @@ struct Sidebar: View {
     @Environment(ScanModel.self) private var model
     @State private var trashRequest: RepoGroup?
 
-    static let rowHeight: CGFloat = 24
+    static let rowHeight: CGFloat = 22
 
     /// The tree flattened into visible rows. Nested DisclosureGroups in a List leave stale
     /// rows behind when collapsed, so expansion and indentation are handled here instead.
