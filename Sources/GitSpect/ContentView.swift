@@ -108,10 +108,10 @@ struct ContentView: View {
             .help("git fetch --all --prune in every repo")
             pullAllButton
         }
-        .controlSize(.small)
+        // macOS buttons have a fixed height per size; large gives the labels room above and below.
+        .controlSize(.large)
         .padding(.horizontal, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 12)
+        .padding(.vertical, 8)
     }
 
     private var pullAllButton: some View {
