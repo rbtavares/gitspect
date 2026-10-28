@@ -86,21 +86,19 @@ struct RepoTitle: View {
     @Environment(ScanModel.self) private var model
 
     var body: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(repo.name)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                HStack(spacing: 14) {
-                    Text((repo.url.path as NSString).abbreviatingWithTildeInPath)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(repo.url.path)
-                    remoteBadge
-                }
-            }
+        // One line, centred in the toolbar: two stacked lines fill its whole height.
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
+            Text(repo.name)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+                .layoutPriority(1)
+            Text((repo.url.path as NSString).abbreviatingWithTildeInPath)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(repo.url.path)
+            remoteBadge
             fetchButton
         }
         .padding(.horizontal, 8)
