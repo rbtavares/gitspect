@@ -348,11 +348,12 @@ struct ContentView: View {
         }
         sidebarTitleTask = Task {
             if visible {
+                // Fades in alongside the sidebar's slide rather than after it.
                 sidebarTitleOpacity = 0
                 showsSidebarTitle = true
-                try? await Task.sleep(for: .seconds(Self.sidebarSettleDelay))
+                try? await Task.sleep(for: .seconds(0.05))
                 guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.2)) { sidebarTitleOpacity = 1 }
+                withAnimation(.easeInOut(duration: Self.sidebarSettleDelay)) { sidebarTitleOpacity = 1 }
             } else {
                 withAnimation(.easeOut(duration: 0.15)) { sidebarTitleOpacity = 0 }
                 try? await Task.sleep(for: .seconds(0.15))
