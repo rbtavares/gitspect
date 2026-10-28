@@ -24,10 +24,13 @@ struct RepoDetail: View {
                         .transaction { $0.animation = nil }
                     if let target = model.graphTarget, target.repo == repo.url {
                         GraphPane(target: target, fraction: $graphFraction, totalWidth: proxy.size.width)
-                            .transition(.opacity)
+                            // Slides over the list, which has already snapped to its new width.
+                            .transition(.move(edge: .trailing))
+                            .zIndex(1)
                     }
                 }
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: model.graphTarget == nil)
+                .clipped()
+                .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: model.graphTarget == nil)
             }
         }
     }

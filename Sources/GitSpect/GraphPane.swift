@@ -38,7 +38,6 @@ struct GraphPane: View {
             resizeHandle
             VStack(spacing: 0) {
                 header
-                Divider()
                 content
             }
         }
@@ -105,6 +104,8 @@ struct GraphPane: View {
         .padding(.horizontal, 12)
         .frame(height: Self.headerHeight)
         .background(.bar)
+        // Inside the height, like the list's column header, so the two line up exactly.
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     @ViewBuilder private var content: some View {
