@@ -9,10 +9,6 @@ struct ContentView: View {
     /// Left edges, in window coordinates, of the detail area and of the toolbar's repo title.
     @State private var detailX: CGFloat?
     @State private var titleX: CGFloat?
-    /// While the sidebar slides, macOS moves the toolbar items in steps; the titles sit it out
-    /// and fade back in together once everything has settled.
-    @State private var isSidebarMoving = false
-    @State private var settleTask: Task<Void, Never>?
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("outputHeight") private var outputHeight = 200.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -87,16 +83,6 @@ struct ContentView: View {
         }
         // Hidden from the toolbar by the window's style (RepoTitle shows instead); still used by the Window menu.
         .navigationTitle(selectedRepo?.name ?? "GitSpect")
-        .onChange(of: columnVisibility) {
-            settleTask?.cancel()
-            guard !reduceMotion else { return }
-            isSidebarMoving = true
-            settleTask = Task {
-                try? await Task.sleep(for: .seconds(Self.sidebarSettleDelay))
-                guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.2)) { isSidebarMoving = false }
-            }
-        }
         .onChange(of: selectedPath) {
             model.clearSelection()
         }
@@ -105,7 +91,9 @@ struct ContentView: View {
                 if let repo = selectedRepo {
                     RepoTitle(repo: repo)
                         .offset(x: titleShift)
-                        .opacity(isSidebarMoving ? 0 : 1)
+                        // macOS moves toolbar items in steps while the sidebar slides; easing the
+                        // shift turns those steps into one glide instead of a jitter.
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: titleShift)
                         // Measures where macOS placed the item (the offset only moves the drawing).
                         .background(WindowXReader { titleX = $0 })
                 }
