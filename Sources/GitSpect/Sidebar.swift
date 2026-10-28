@@ -53,12 +53,13 @@ struct Sidebar: View {
                             }
                         }
                 case .repo(let repo, let depth):
-                    // The same indent and chevron slot as a folder row, so icons line up.
+                    // Icon directly under the parent folder's icon (Finder-style), so a sibling
+                    // folder's chevron sits in the same column as the repo icons.
                     HStack(spacing: 0) {
                         Color.clear.frame(width: FolderRow.chevronWidth)
                         SidebarRow(repo: repo)
                     }
-                    .padding(.leading, FolderRow.indent(depth))
+                    .padding(.leading, FolderRow.indent(depth - 1))
                     .tag(repo.url)
                 }
             }
