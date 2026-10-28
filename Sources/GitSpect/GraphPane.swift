@@ -20,6 +20,7 @@ struct GraphPane: View {
     @AppStorage("commitDrawerHeight") private var drawerHeight = 260.0
 
     static let minWidth: CGFloat = 300
+    static let headerHeight: CGFloat = 26
     /// Room always left for the repo view.
     static let minDetailWidth: CGFloat = 320
 
@@ -102,7 +103,7 @@ struct GraphPane: View {
             .help("Close graph")
         }
         .padding(.horizontal, 12)
-        .frame(height: 26)
+        .frame(height: Self.headerHeight)
         .background(.bar)
     }
 

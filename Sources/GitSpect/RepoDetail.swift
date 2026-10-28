@@ -36,12 +36,11 @@ struct RepoDetail: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
                 Section {
-                    ForEach(repo.pairs) { PairRow(pair: $0, repo: repo) }
+                    ForEach(repo.pairs) { PairRow(pair: $0, repo: repo).padding(.trailing, 12) }
                 } header: {
                     columnTitles
                 }
             }
-            .padding(.trailing, 12)
             // Room for the floating selection bar.
             .padding(.bottom, 64)
         }
@@ -126,9 +125,11 @@ struct RepoDetail: View {
             ColumnTitle("Worktrees \(repo.worktrees.count)")
         }
         .padding(.leading, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 4)
-        .background(.background)
+        .padding(.trailing, 12)
+        // Matches the graph pane's header, so the two read as one bar when it's open.
+        .frame(height: GraphPane.headerHeight)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
