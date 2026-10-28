@@ -213,11 +213,23 @@ struct SidebarRow: View {
                     .foregroundStyle(.red)
                     .help(model.errors[repo.url] ?? "")
             }
-            // Pull/push only take space when non-zero.
-            Metric(symbol: "arrow.down", count: behind, color: .blue)
-                .help("\(behind) commit\(behind == 1 ? "" : "s") to pull")
-            Metric(symbol: "arrow.up", count: ahead, color: .green)
-                .help("\(ahead) commit\(ahead == 1 ? "" : "s") to push")
+            // Pull/push only take space when non-zero; each pulls or pushes every branch it can.
+            if behind > 0 {
+                let branches = model.pullableBranches(in: repo).count
+                SyncPill(symbol: "arrow.down", count: behind, color: .blue) { model.pullAll(in: repo) }
+                    .disabled(branches == 0 || model.running[repo.url] != nil)
+                    .help(branches == 0
+                          ? "\(behind) commit\(behind == 1 ? "" : "s") behind, but every branch has diverged: needs a merge or rebase"
+                          : "Pull \(behind) commit\(behind == 1 ? "" : "s") (fast-forward \(branches) branch\(branches == 1 ? "" : "es"))")
+            }
+            if ahead > 0 {
+                let branches = model.pushableBranches(in: repo).count
+                SyncPill(symbol: "arrow.up", count: ahead, color: .green) { model.pushAll(in: repo) }
+                    .disabled(branches == 0 || model.running[repo.url] != nil)
+                    .help(branches == 0
+                          ? "\(ahead) commit\(ahead == 1 ? "" : "s") ahead, but no branch can be pushed as-is (diverged or a differently named upstream)"
+                          : "Push \(ahead) commit\(ahead == 1 ? "" : "s") (\(branches) branch\(branches == 1 ? "" : "es"))")
+            }
         }
         .help(repo.url.path + "\n" + (repo.remotes.first.map { "\($0.name): \($0.displayName)" } ?? "Local only: no remote"))
         .contextMenu {
@@ -228,24 +240,6 @@ struct SidebarRow: View {
             }
             Divider()
             PathActions(path: repo.url.path)
-        }
-    }
-}
-
-/// An icon and count, hidden at zero.
-private struct Metric: View {
-    let symbol: String
-    let count: Int
-    let color: Color
-
-    var body: some View {
-        if count > 0 {
-            HStack(spacing: 2) {
-                Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
-                Text("\(count)").font(.system(size: 11).monospacedDigit())
-            }
-            .foregroundStyle(color)
-            .fixedSize()
         }
     }
 }

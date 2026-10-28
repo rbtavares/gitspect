@@ -196,12 +196,16 @@ final class ScanModel {
     /// Branches behind their upstream that can be fast-forwarded (not diverged), by repo.
     var pullableBranches: [(repo: Repo, branches: [String])] {
         repos.compactMap { repo in
-            let branches = (statuses[repo.url] ?? [:])
-                .filter { $0.value.behind > 0 && $0.value.ahead == 0 && !$0.value.isGone }
-                .keys
-                .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            let branches = pullableBranches(in: repo)
             return branches.isEmpty ? nil : (repo, branches)
         }
+    }
+
+    func pullableBranches(in repo: Repo) -> [String] {
+        (statuses[repo.url] ?? [:])
+            .filter { $0.value.behind > 0 && $0.value.ahead == 0 && !$0.value.isGone }
+            .keys
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     /// Fast-forwards every pullable branch. Repos run in parallel; one repo's branches run in turn,
@@ -223,15 +227,38 @@ final class ScanModel {
 
     /// Plain push to the configured upstream; rejected by git if it isn't a fast-forward.
     func push(_ repo: Repo, branch: String) {
+        Task { await pushBranch(repo, branch: branch) }
+    }
+
+    private func pushBranch(_ repo: Repo, branch: String) async {
         guard let status = statuses[repo.url]?[branch], status.canPush(branch) else { return }
-        Task {
-            await perform(.push(branch: branch), on: repo.url) {
-                _ = try await runLogged(
-                    ["push", status.remote, "refs/heads/\(branch):\(status.remoteRef)"], in: repo.url, repo: repo,
-                    timeout: Self.networkTimeout
-                )
-            }
+        await perform(.push(branch: branch), on: repo.url) {
+            _ = try await runLogged(
+                ["push", status.remote, "refs/heads/\(branch):\(status.remoteRef)"], in: repo.url, repo: repo,
+                timeout: Self.networkTimeout
+            )
         }
+    }
+
+    /// Branches in `repo` that are ahead and can be pushed as-is: not diverged, and to an upstream
+    /// branch of the same name.
+    func pushableBranches(in repo: Repo) -> [String] {
+        (statuses[repo.url] ?? [:])
+            .filter { $0.value.ahead > 0 && $0.value.behind == 0 && !$0.value.isGone && $0.value.canPush($0.key) }
+            .keys
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    /// Fast-forwards every pullable branch in one repo, one at a time.
+    func pullAll(in repo: Repo) {
+        let branches = pullableBranches(in: repo)
+        Task { for branch in branches { await pullBranch(repo, branch: branch) } }
+    }
+
+    /// Pushes every pushable branch in one repo, one at a time.
+    func pushAll(in repo: Repo) {
+        let branches = pushableBranches(in: repo)
+        Task { for branch in branches { await pushBranch(repo, branch: branch) } }
     }
 
     // MARK: - Deletion

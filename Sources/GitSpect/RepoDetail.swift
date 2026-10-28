@@ -379,7 +379,7 @@ struct SyncCount: View {
     }
 }
 
-private struct SyncPill: View {
+struct SyncPill: View {
     let symbol: String
     let count: Int
     let color: Color
@@ -392,7 +392,7 @@ private struct SyncPill: View {
 }
 
 /// Feedback lands on press, not release.
-private struct PillButtonStyle: ButtonStyle {
+struct PillButtonStyle: ButtonStyle {
     let color: Color
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovered = false
