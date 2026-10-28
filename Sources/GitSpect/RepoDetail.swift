@@ -103,9 +103,6 @@ struct RepoTitle: View {
                 }
             }
         }
-        // The toolbar insets its first item ~10pt more than the list below; pull the title back so
-        // the repo name lines up with the "Branches" header.
-        .offset(x: -10)
         .contextMenu { PathActions(path: repo.url.path) }
     }
 

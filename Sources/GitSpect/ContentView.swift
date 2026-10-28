@@ -6,6 +6,9 @@ struct ContentView: View {
     @State private var query = ""
     @State private var collapsed: Set<String> = []
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
+    /// Left edges, in window coordinates, of the detail area and of the toolbar's repo title.
+    @State private var detailX: CGFloat?
+    @State private var titleX: CGFloat?
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("outputHeight") private var outputHeight = 200.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -32,6 +35,7 @@ struct ContentView: View {
                         VStack(spacing: 0) {
                             detail
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .background(WindowXReader { detailX = $0 })
                             if model.showsOutput {
                                 OutputPanel(height: $outputHeight, maxHeight: proxy.size.height - 200) {
                                     model.setOutputVisible(false)
@@ -84,7 +88,12 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                if let repo = selectedRepo { RepoTitle(repo: repo) }
+                if let repo = selectedRepo {
+                    RepoTitle(repo: repo)
+                        .offset(x: titleShift)
+                        // Measures where macOS placed the item (the offset only moves the drawing).
+                        .background(WindowXReader { titleX = $0 })
+                }
             }
             // Flexible space: the app-wide actions sit at the far right, apart from the repo.
             // Flexible space: the repo's own Fetch sits at the far right.
@@ -192,7 +201,7 @@ struct ContentView: View {
 
     private var sidebarTitle: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("GitSpect")
+            Text("Repositories")
                 .font(.system(size: 13, weight: .semibold))
             Text(subtitle)
                 .font(.system(size: 11))
@@ -306,10 +315,19 @@ struct ContentView: View {
             .filter { !$0.groups.isEmpty }
     }
 
-    /// "2 folders · 27 repos".
+    /// "2 folders".
     private var subtitle: String {
         let folders = "\(model.roots.count) folder\(model.roots.count == 1 ? "" : "s")"
-        return model.isScanning ? "\(folders) · scanning…" : "\(folders) · \(model.repos.count) repos"
+        return model.isScanning ? "\(folders) · scanning…" : folders
+    }
+
+    /// How far to move the toolbar's repo title so it lines up with the "Branches" header below
+    /// (20pt in from the detail area). Where macOS places toolbar items depends on the window
+    /// (full screen or not, sidebar width), so it's measured rather than fixed. With the sidebar
+    /// collapsed the title stays put: lining up would slide it under the sidebar button.
+    private var titleShift: CGFloat {
+        guard columnVisibility != .detailOnly, let detailX, let titleX else { return 0 }
+        return detailX + 20 - titleX
     }
 
     private var selectedRepo: Repo? { model.repos.first { $0.url.path == selectedPath } }
