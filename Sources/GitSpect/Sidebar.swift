@@ -175,7 +175,7 @@ struct SidebarRow: View {
                 Text(repo.name)
                     .font(.system(size: 13))
                     // Quieter than the bold folder names; full strength once selected.
-                    .opacity(isSelected ? 1 : 0.8)
+                    .opacity(isSelected ? 1 : 0.7)
                     .lineLimit(1)
                     .truncationMode(.middle)
             } icon: {
