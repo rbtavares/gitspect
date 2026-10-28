@@ -111,7 +111,9 @@ struct ContentView: View {
         // macOS buttons have a fixed height per size; large gives the labels room above and below.
         .controlSize(.large)
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        // Clear of the search field above.
+        .padding(.top, 14)
+        .padding(.bottom, 8)
     }
 
     private var pullAllButton: some View {
