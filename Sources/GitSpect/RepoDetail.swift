@@ -13,9 +13,8 @@ struct RepoDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider()
-            // The graph pane opens beside the list, below the header.
+            errorBanner
+            // The graph pane opens beside the list.
             GeometryReader { proxy in
                 HStack(spacing: 0) {
                     pairList
@@ -49,32 +48,61 @@ struct RepoDetail: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(repo.name)
-                    .font(.system(size: 15, weight: .semibold))
-                Text((repo.url.path as NSString).abbreviatingWithTildeInPath)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                remoteBadge
-                Spacer()
-                fetchButton
-            }
-            if let error = model.errors[repo.url] {
-                Text(error)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.red)
-                    .lineLimit(3)
-                    .textSelection(.enabled)
-                    .help(error)
-            }
+    /// Errors from the last git command on this repo. The name, path and remote live in the toolbar.
+    @ViewBuilder private var errorBanner: some View {
+        if let error = model.errors[repo.url] {
+            Text(error)
+                .font(.system(size: 11))
+                .foregroundStyle(.red)
+                .lineLimit(3)
+                .textSelection(.enabled)
+                .help(error)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.red.opacity(0.08))
+                .overlay(alignment: .bottom) { Divider() }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
+    }
+
+    private var columnTitles: some View {
+        HStack(spacing: 0) {
+            ColumnTitle("Branches", count: repo.branches.count)
+            Color.clear.frame(width: Self.columnGap)
+            ColumnTitle("Worktrees", count: repo.worktrees.count)
+        }
+        .padding(.leading, 20)
+        .padding(.trailing, 12)
+        // Matches the graph pane's header, so the two read as one bar when it's open.
+        .frame(height: GraphPane.headerHeight)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
+/// The selected repo's name, path and remote, with its Fetch button. Shown in the window toolbar.
+struct RepoTitle: View {
+    let repo: Repo
+    @Environment(ScanModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(repo.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    Text((repo.url.path as NSString).abbreviatingWithTildeInPath)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(repo.url.path)
+                    remoteBadge
+                }
+            }
+            fetchButton
+        }
         .contextMenu { PathActions(path: repo.url.path) }
     }
 
@@ -121,31 +149,23 @@ struct RepoDetail: View {
         .help(repo.isLocalOnly ? "No remote to fetch from" : "git fetch --all --prune")
     }
 
-    private var columnTitles: some View {
-        HStack(spacing: 0) {
-            ColumnTitle("Branches \(repo.branches.count)")
-            Color.clear.frame(width: Self.columnGap)
-            ColumnTitle("Worktrees \(repo.worktrees.count)")
-        }
-        .padding(.leading, 20)
-        .padding(.trailing, 12)
-        // Matches the graph pane's header, so the two read as one bar when it's open.
-        .frame(height: GraphPane.headerHeight)
-        .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
-    }
 }
 
+/// Styled like the other pane headers (Output, graph, commit): 11pt semibold, count in grey.
 private struct ColumnTitle: View {
     let text: String
-    init(_ text: String) { self.text = text }
+    let count: Int
+    init(_ text: String, count: Int) { self.text = text; self.count = count }
 
     var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 9, weight: .semibold))
-            .kerning(0.6)
-            .foregroundStyle(.tertiary)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: 5) {
+            Text(text)
+                .font(.system(size: 11, weight: .semibold))
+            Text("\(count)")
+                .font(.system(size: 11).monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

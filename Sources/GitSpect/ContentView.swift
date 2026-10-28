@@ -54,12 +54,15 @@ struct ContentView: View {
         } message: { request in
             Text(dialogMessage(request))
         }
-        .navigationSubtitle(subtitle)
+        .toolbarRepoTitle(selectedRepo?.name ?? "GitSpect")
         .onChange(of: selectedPath) {
             model.clearSelection()
             model.closeGraph()
         }
         .toolbar {
+            ToolbarItem(placement: .navigation) {
+                if let repo = selectedRepo { RepoTitle(repo: repo) }
+            }
             ToolbarItemGroup {
                 Button(action: model.fetchAll) {
                     if let progress = model.fetchAllProgress {
@@ -133,6 +136,20 @@ struct ContentView: View {
         }
         .frame(maxHeight: .infinity)
         .safeAreaInset(edge: .bottom, spacing: 0) { sidebarBar }
+        .toolbar {
+            // In the sidebar's part of the toolbar, beside the window buttons.
+            ToolbarItem {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("GitSpect")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .help(model.roots.map(\.path).joined(separator: "\n"))
+            }
+        }
         .searchable(text: $query, placement: .sidebar, prompt: "Filter repos, branches, worktrees")
     }
 
@@ -217,13 +234,13 @@ struct ContentView: View {
             .filter { !$0.groups.isEmpty }
     }
 
+    /// "2 folders · 27 repos".
     private var subtitle: String {
-        guard let first = model.roots.first else { return "" }
-        let folders = model.roots.count == 1
-            ? (first.path as NSString).abbreviatingWithTildeInPath
-            : "\(model.roots.count) folders"
-        return model.isScanning ? "\(folders) — scanning…" : "\(folders) — \(model.repos.count) repos"
+        let folders = "\(model.roots.count) folder\(model.roots.count == 1 ? "" : "s")"
+        return model.isScanning ? "\(folders) · scanning…" : "\(folders) · \(model.repos.count) repos"
     }
+
+    private var selectedRepo: Repo? { model.repos.first { $0.url.path == selectedPath } }
 
     private func addFolders() { model.chooseFoldersToAdd() }
 }
@@ -268,5 +285,17 @@ private struct SelectionBar: View {
         .background(.regularMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+    }
+}
+
+private extension View {
+    /// The toolbar shows the selected repo (`RepoTitle`) in place of a title. On macOS 15+ the window
+    /// keeps its title for the Window menu; macOS 14 can't hide it from the toolbar, so it's left empty.
+    @ViewBuilder func toolbarRepoTitle(_ title: String) -> some View {
+        if #available(macOS 15, *) {
+            navigationTitle(title).toolbar(removing: .title)
+        } else {
+            navigationTitle("")
+        }
     }
 }
