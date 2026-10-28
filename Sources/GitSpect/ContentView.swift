@@ -63,6 +63,8 @@ struct ContentView: View {
             ToolbarItem(placement: .navigation) {
                 if let repo = selectedRepo { RepoTitle(repo: repo) }
             }
+            // Flexible space: the app-wide actions sit at the far right, apart from the repo.
+            ToolbarItem { Spacer() }
             ToolbarItemGroup {
                 Button(action: model.fetchAll) {
                     if let progress = model.fetchAllProgress {
@@ -139,7 +141,7 @@ struct ContentView: View {
         .toolbar {
             // In the sidebar's part of the toolbar, beside the window buttons.
             ToolbarItem {
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("GitSpect")
                         .font(.system(size: 13, weight: .semibold))
                     Text(subtitle)
@@ -147,6 +149,7 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
+                .padding(.horizontal, 6)
                 .help(model.roots.map(\.path).joined(separator: "\n"))
             }
         }

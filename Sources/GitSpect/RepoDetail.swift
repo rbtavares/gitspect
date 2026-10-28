@@ -86,12 +86,12 @@ struct RepoTitle: View {
     @Environment(ScanModel.self) private var model
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 1) {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(repo.name)
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
-                HStack(spacing: 8) {
+                HStack(spacing: 14) {
                     Text((repo.url.path as NSString).abbreviatingWithTildeInPath)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -103,16 +103,21 @@ struct RepoTitle: View {
             }
             fetchButton
         }
+        .padding(.horizontal, 8)
         .contextMenu { PathActions(path: repo.url.path) }
     }
 
     /// Where the repo is published: a link to the remote's page, or a "Local only" tag.
     @ViewBuilder private var remoteBadge: some View {
         if let remote = repo.remotes.first {
-            let label = Label(remote.displayName, systemImage: "network")
-                .font(.system(size: 11))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            // Toolbars reduce a Label to its icon, so icon and text are laid out by hand.
+            let label = HStack(spacing: 4) {
+                Image(systemName: "network")
+                Text(remote.displayName)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .font(.system(size: 11))
             let others = repo.remotes.dropFirst().map(\.name)
             let help = "\(remote.name): \(remote.url)" + (others.isEmpty ? "" : "\nAlso: " + others.joined(separator: ", "))
             if let web = remote.webURL {
@@ -138,10 +143,13 @@ struct RepoTitle: View {
         Button {
             Task { await model.fetch(repo) }
         } label: {
-            if model.running[repo.url] == .fetch {
-                ProgressView().controlSize(.mini)
-            } else {
-                Label("Fetch", systemImage: "arrow.down.circle")
+            HStack(spacing: 4) {
+                if model.running[repo.url] == .fetch {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: "arrow.down.circle")
+                }
+                Text("Fetch")
             }
         }
         .controlSize(.small)
