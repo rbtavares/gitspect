@@ -16,6 +16,8 @@ struct Repo: Identifiable, Hashable, Sendable {
     var id: URL { url }
     let url: URL
     let name: String
+    /// The added folder this repo was found under, as the user chose it.
+    let root: URL
     let relativePath: String
     let branches: [String]
     let worktrees: [Worktree]
@@ -29,14 +31,14 @@ enum RepoScanner {
 
     static func scan(root: URL) -> [Repo] {
         let fm = FileManager.default
-        let root = root.standardizedFileURL.resolvingSymlinksInPath()
+        let resolvedRoot = root.standardizedFileURL.resolvingSymlinksInPath()
 
-        if let repo = repo(at: root, root: root) {
+        if let repo = repo(at: resolvedRoot, root: root) {
             return [repo]
         }
 
         guard let enumerator = fm.enumerator(
-            at: root,
+            at: resolvedRoot,
             includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
             options: [.skipsPackageDescendants],
             errorHandler: { _, _ in true }
@@ -66,6 +68,7 @@ enum RepoScanner {
             .sorted { $0.relativePath.localizedStandardCompare($1.relativePath) == .orderedAscending }
     }
 
+    /// `root` is the added folder as the user chose it; paths are made relative to its resolved form.
     static func repo(at dir: URL, root: URL) -> Repo? {
         let dotGit = dir.appendingPathComponent(".git")
         guard FileManager.default.fileExists(atPath: dotGit.path),
@@ -73,7 +76,8 @@ enum RepoScanner {
         else { return nil }
 
         let commonDir = resolveCommonDir(gitDir: gitDir)
-        let rootPath = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        let resolvedRoot = root.standardizedFileURL.resolvingSymlinksInPath().path
+        let rootPath = resolvedRoot.hasSuffix("/") ? resolvedRoot : resolvedRoot + "/"
         var relative = dir.path.hasPrefix(rootPath) ? String(dir.path.dropFirst(rootPath.count)) : dir.path
         if relative.isEmpty { relative = "." }
 
@@ -85,7 +89,7 @@ enum RepoScanner {
         worktrees += linkedWorktrees(commonDir: commonDir).filter { $0.path != dir.path }
 
         return Repo(
-            url: dir, name: dir.lastPathComponent, relativePath: relative,
+            url: dir, name: dir.lastPathComponent, root: root, relativePath: relative,
             branches: branches(commonDir: commonDir), worktrees: worktrees
         )
     }

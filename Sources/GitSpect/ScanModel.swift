@@ -58,13 +58,15 @@ struct DeletionRequest: Identifiable {
 @Observable
 @MainActor
 final class ScanModel {
-    private static let rootKey = "rootPath"
+    private static let rootsKey = "rootPaths"
+    /// Single-folder setting from before multiple folders were supported.
+    private static let legacyRootKey = "rootPath"
     private static let concurrency = 12
     private static let networkTimeout: Duration = .seconds(120)
     private static let localTimeout: Duration = .seconds(60)
     private static let logLimit = 200
 
-    private(set) var root: URL?
+    private(set) var roots: [URL] = []
     private(set) var repos: [Repo] = []
     private(set) var isScanning = false
     private(set) var statuses: [URL: [String: BranchStatus]] = [:]
@@ -78,28 +80,58 @@ final class ScanModel {
     private var scanTask: Task<Void, Never>?
 
     init() {
-        if let path = UserDefaults.standard.string(forKey: Self.rootKey) {
-            select(root: URL(fileURLWithPath: path, isDirectory: true))
-        }
+        let defaults = UserDefaults.standard
+        let paths = defaults.stringArray(forKey: Self.rootsKey)
+            ?? defaults.string(forKey: Self.legacyRootKey).map { [$0] }
+            ?? []
+        roots = paths.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        if !roots.isEmpty { rescan() }
     }
 
-    func select(root: URL) {
-        self.root = root
-        UserDefaults.standard.set(root.path, forKey: Self.rootKey)
+    /// Adds folders to scan; folders already added are ignored.
+    func add(roots added: [URL]) {
+        let known = Set(roots.map(\.standardizedFileURL))
+        roots += added.filter { !known.contains($0.standardizedFileURL) }
+        saveRoots()
         rescan()
     }
 
+    func remove(root: URL) {
+        roots.removeAll { $0 == root }
+        saveRoots()
+        rescan()
+    }
+
+    private func saveRoots() {
+        UserDefaults.standard.set(roots.map(\.path), forKey: Self.rootsKey)
+    }
+
     func rescan() {
-        guard let root else { return }
         scanTask?.cancel()
         clearSelection()
-        isScanning = true
-        scanTask = Task {
-            let found = await Task.detached(priority: .userInitiated) { RepoScanner.scan(root: root) }.value
-            guard !Task.isCancelled else { return }
-            repos = found
+        guard !roots.isEmpty else {
+            repos = []
             isScanning = false
-            await forEach(found) { await self.refreshStatus($0.url) }
+            return
+        }
+        isScanning = true
+        let roots = roots
+        scanTask = Task {
+            // Walk every folder in parallel, keeping results in the order the folders were added.
+            let found = await withTaskGroup(of: (Int, [Repo]).self) { group in
+                for (index, root) in roots.enumerated() {
+                    group.addTask(priority: .userInitiated) { (index, RepoScanner.scan(root: root)) }
+                }
+                var results = [[Repo]](repeating: [], count: roots.count)
+                for await (index, repos) in group { results[index] = repos }
+                return results.flatMap { $0 }
+            }
+            guard !Task.isCancelled else { return }
+            // A repo under two overlapping folders is listed once, under the first.
+            var seen = Set<URL>()
+            repos = found.filter { seen.insert($0.url).inserted }
+            isScanning = false
+            await forEach(repos) { await self.refreshStatus($0.url) }
         }
     }
 
@@ -318,8 +350,8 @@ final class ScanModel {
     private func repo(_ url: URL) -> Repo? { repos.first { $0.url == url } }
 
     private func reload(_ repo: Repo) {
-        guard let root, let index = repos.firstIndex(where: { $0.id == repo.id }),
-              let updated = RepoScanner.repo(at: repo.url, root: root.standardizedFileURL.resolvingSymlinksInPath())
+        guard let index = repos.firstIndex(where: { $0.id == repo.id }),
+              let updated = RepoScanner.repo(at: repo.url, root: repo.root)
         else { return }
         repos[index] = updated
     }

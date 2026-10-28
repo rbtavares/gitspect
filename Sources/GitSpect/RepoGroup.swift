@@ -1,21 +1,37 @@
 import Foundation
 
+/// An added folder and the repos found under it, grouped by parent folder.
+struct RootNode: Identifiable, Sendable {
+    var id: URL { root }
+    let root: URL
+    let groups: [RepoGroup]
+
+    /// One node per root, in the order the folders were added.
+    static func tree(roots: [URL], repos: [Repo]) -> [RootNode] {
+        let byRoot = Dictionary(grouping: repos, by: \.root)
+        return roots.map { RootNode(root: $0, groups: RepoGroup.grouping(byRoot[$0] ?? [], in: $0)) }
+    }
+}
+
 struct RepoGroup: Identifiable, Sendable {
-    /// Parent path relative to the scan root; empty for repos directly under the root.
-    let id: String
+    let root: URL
+    /// Parent path relative to the root; empty for repos directly under the root.
+    let path: String
     let repos: [Repo]
 
-    static func grouping(_ repos: [Repo]) -> [RepoGroup] {
+    var id: String { root.path + "\n" + path }
+
+    static func grouping(_ repos: [Repo], in root: URL) -> [RepoGroup] {
         let byParent = Dictionary(grouping: repos) { repo -> String in
             let parent = (repo.relativePath as NSString).deletingLastPathComponent
             return parent == "." ? "" : parent
         }
         return byParent
-            .map { RepoGroup(id: $0.key, repos: $0.value) }
+            .map { RepoGroup(root: root, path: $0.key, repos: $0.value) }
             .sorted { lhs, rhs in
                 // Root-level repos first, then groups alphabetically.
-                if lhs.id.isEmpty != rhs.id.isEmpty { return lhs.id.isEmpty }
-                return lhs.id.localizedStandardCompare(rhs.id) == .orderedAscending
+                if lhs.path.isEmpty != rhs.path.isEmpty { return lhs.path.isEmpty }
+                return lhs.path.localizedStandardCompare(rhs.path) == .orderedAscending
             }
     }
 }

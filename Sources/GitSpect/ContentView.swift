@@ -12,13 +12,13 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if model.root == nil {
+            if model.roots.isEmpty {
                 ContentUnavailableView {
-                    Label("No Folder Selected", systemImage: "folder")
+                    Label("No Folders Added", systemImage: "folder")
                 } description: {
-                    Text("Choose a folder that contains your git repositories.")
+                    Text("Add one or more folders that contain your git repositories.")
                 } actions: {
-                    Button("Choose Folder…", action: chooseFolder)
+                    Button("Add Folders…", action: addFolders)
                         .buttonStyle(.borderedProminent)
                 }
             } else {
@@ -87,22 +87,21 @@ struct ContentView: View {
                 .foregroundStyle(!showsOutput && model.log.last?.status == .failed ? .red : .primary)
                 .help(showsOutput ? "Hide output (⇧⌘Y)" : "Show output (⇧⌘Y)")
                 Button(action: model.rescan) { Label("Rescan", systemImage: "arrow.clockwise") }
-                    .disabled(model.root == nil || model.isScanning)
-                Button(action: chooseFolder) { Label("Choose Folder…", systemImage: "folder") }
+                    .disabled(model.roots.isEmpty || model.isScanning)
+                Button(action: addFolders) { Label("Add Folders…", systemImage: "folder.badge.plus") }
+                    .help("Add folders to scan for repositories")
             }
         }
     }
 
     @ViewBuilder private var sidebar: some View {
         Group {
-            if model.repos.isEmpty && !model.isScanning {
-                ContentUnavailableView("No Repositories Found", systemImage: "magnifyingglass")
-            } else if groups.isEmpty && !query.isEmpty {
+            // Folders without repos still show, so they can be removed from the tree.
+            if tree.isEmpty && !query.isEmpty {
                 ContentUnavailableView.search(text: query)
             } else {
                 Sidebar(
-                    groups: groups,
-                    rootName: model.root?.lastPathComponent ?? "",
+                    roots: tree,
                     selection: Binding(
                         get: { selectedPath.isEmpty ? nil : URL(fileURLWithPath: selectedPath) },
                         set: { selectedPath = $0?.path ?? "" }
@@ -188,25 +187,30 @@ struct ContentView: View {
         items.sorted { describe($0).localizedStandardCompare(describe($1)) == .orderedAscending }
     }
 
-    private var groups: [RepoGroup] {
-        RepoGroup.grouping(query.isEmpty ? model.repos : model.repos.filter { $0.matches(query) })
+    private var tree: [RootNode] {
+        guard !query.isEmpty else { return RootNode.tree(roots: model.roots, repos: model.repos) }
+        // While filtering, folders with no matches are hidden.
+        return RootNode.tree(roots: model.roots, repos: model.repos.filter { $0.matches(query) })
+            .filter { !$0.groups.isEmpty }
     }
 
     private var subtitle: String {
-        guard let root = model.root else { return "" }
-        let path = (root.path as NSString).abbreviatingWithTildeInPath
-        return model.isScanning ? "\(path) — scanning…" : "\(path) — \(model.repos.count) repos"
+        guard let first = model.roots.first else { return "" }
+        let folders = model.roots.count == 1
+            ? (first.path as NSString).abbreviatingWithTildeInPath
+            : "\(model.roots.count) folders"
+        return model.isScanning ? "\(folders) — scanning…" : "\(folders) — \(model.repos.count) repos"
     }
 
-    private func chooseFolder() {
+    private func addFolders() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Choose"
-        if let root = model.root { panel.directoryURL = root }
-        if panel.runModal() == .OK, let url = panel.url {
-            model.select(root: url)
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Add"
+        if let last = model.roots.last { panel.directoryURL = last.deletingLastPathComponent() }
+        if panel.runModal() == .OK {
+            model.add(roots: panel.urls)
         }
     }
 }
