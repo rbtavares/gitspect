@@ -17,7 +17,6 @@ struct GraphPane: View {
     @State private var selectedCommit: String?
     @State private var scrollTarget: String?
     @State private var dragStart: CGFloat?
-    @AppStorage("commitDrawerHeight") private var drawerHeight = 260.0
 
     static let minWidth: CGFloat = 300
     static let headerHeight: CGFloat = 26
@@ -127,8 +126,8 @@ struct GraphPane: View {
                     commitList
                     if let hash = selectedCommit, let row = rows.first(where: { $0.commit.hash == hash }) {
                         CommitDrawer(
-                            commit: row.commit, repo: target.repo, height: $drawerHeight,
-                            maxHeight: proxy.size.height - 80,
+                            // At most half the pane; shorter when its contents are.
+                            commit: row.commit, repo: target.repo, maxHeight: proxy.size.height / 2,
                             isInGraph: { parent in rows.contains { $0.commit.hash == parent } },
                             select: { parent in
                                 selectedCommit = parent
@@ -355,11 +354,11 @@ private struct RefBadge: View {
     }
 }
 
-/// Bottom drawer in the graph pane with one commit's message, people, parents and changed files.
+/// Bottom drawer in the graph pane with one commit's message, people, signature, parents and
+/// changed files. As tall as its contents, up to `maxHeight`, then it scrolls.
 private struct CommitDrawer: View {
     let commit: GraphCommit
     let repo: URL
-    @Binding var height: Double
     let maxHeight: CGFloat
     /// Whether a parent is loaded in the graph, so it can be jumped to.
     let isInGraph: (String) -> Bool
@@ -367,15 +366,14 @@ private struct CommitDrawer: View {
     let close: () -> Void
     @State private var details: CommitDetails?
     @State private var error: String?
-    @State private var dragStart: Double?
-
-    private static let minHeight: CGFloat = 120
+    @State private var contentHeight: CGFloat = 0
+    /// Files whose diff is open.
+    @State private var expanded: Set<String> = []
 
     var body: some View {
         VStack(spacing: 0) {
-            resizeHandle
-            header
             Divider()
+            header
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     message
@@ -385,35 +383,12 @@ private struct CommitDrawer: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
+            .frame(height: min(contentHeight, max(maxHeight - GraphPane.headerHeight - 1, 0)))
         }
-        .frame(height: clamped(height))
         .background(Color(nsColor: .textBackgroundColor))
         .task(id: commit.hash) { await load() }
-    }
-
-    private var resizeHandle: some View {
-        Divider()
-            .overlay {
-                Color.clear
-                    .frame(height: 8)
-                    .contentShape(Rectangle())
-                    .onHover { inside in
-                        if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
-                    }
-                    .gesture(
-                        DragGesture(coordinateSpace: .global)
-                            .onChanged { value in
-                                let start = dragStart ?? height
-                                dragStart = start
-                                height = start - value.translation.height
-                            }
-                            .onEnded { _ in
-                                height = clamped(height)
-                                dragStart = nil
-                            }
-                    )
-            }
     }
 
     private var header: some View {
@@ -437,8 +412,9 @@ private struct CommitDrawer: View {
             .help("Close commit details")
         }
         .padding(.horizontal, 12)
-        .frame(height: 26)
+        .frame(height: GraphPane.headerHeight)
         .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     @ViewBuilder private var message: some View {
@@ -468,6 +444,10 @@ private struct CommitDrawer: View {
                 if details.committerEmail != details.authorEmail
                     || abs(details.commitDate.timeIntervalSince(details.authorDate)) > 60 {
                     person("Committer", details.committerName, details.committerEmail, details.commitDate)
+                }
+                GridRow {
+                    label("Signature")
+                    SignatureLabel(signature: details.signature)
                 }
             } else {
                 GridRow {
@@ -539,7 +519,15 @@ private struct CommitDrawer: View {
                     }
                 }
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(details.files) { FileRow(file: $0) }
+                    ForEach(details.files) { file in
+                        FileRow(file: file, isExpanded: expanded.contains(file.id)) {
+                            if expanded.remove(file.id) == nil { expanded.insert(file.id) }
+                        }
+                        if expanded.contains(file.id) {
+                            FileDiff(repo: repo, commit: commit, file: file)
+                                .padding(.bottom, 6)
+                        }
+                    }
                 }
             }
         } else {
@@ -556,6 +544,7 @@ private struct CommitDrawer: View {
     private func load() async {
         details = nil
         error = nil
+        expanded = []
         do {
             let loaded = try await GitGraph.details(repo: repo, commit: commit)
             guard !Task.isCancelled else { return }
@@ -565,17 +554,47 @@ private struct CommitDrawer: View {
             self.error = error.localizedDescription
         }
     }
+}
 
-    private func clamped(_ value: Double) -> CGFloat {
-        min(max(CGFloat(value), Self.minHeight), max(maxHeight, Self.minHeight))
+private struct SignatureLabel: View {
+    let signature: Signature
+
+    var body: some View {
+        let (symbol, text, color): (String, String, Color) = switch signature.status {
+        case .good: ("checkmark.seal.fill", "Verified", .green)
+        case .unknownValidity: ("checkmark.seal", "Signed, key not trusted", .orange)
+        case .cannotCheck: ("questionmark.diamond", "Signed, can't verify (key not on this Mac)", .secondary)
+        case .bad: ("xmark.seal.fill", "Bad signature", .red)
+        case .expired: ("clock.badge.exclamationmark", "Signed with an expired key", .orange)
+        case .revoked: ("xmark.seal", "Signed with a revoked key", .red)
+        case .unsigned: ("seal", "Not signed", .secondary)
+        }
+        HStack(spacing: 4) {
+            Image(systemName: symbol).foregroundStyle(color)
+            Text(text).foregroundStyle(signature.status == .unsigned ? .secondary : .primary)
+            if !signature.signer.isEmpty {
+                Text(signature.signer)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+        }
     }
 }
 
 private struct FileRow: View {
     let file: FileChange
+    let isExpanded: Bool
+    let toggle: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.tertiary)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .frame(width: 10)
             Image(systemName: file.oldPath == nil ? "doc" : "arrow.right.doc.on.clipboard")
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
@@ -596,8 +615,116 @@ private struct FileRow: View {
         }
         .frame(height: 18)
         .contentShape(Rectangle())
+        .onTapGesture(perform: toggle)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(isExpanded ? "Diff shown" : "Diff hidden")
         .contextMenu {
+            Button(isExpanded ? "Hide Changes" : "Show Changes", action: toggle)
             Button("Copy Path") { copy(file.path) }
+        }
+    }
+}
+
+/// One file's diff: old and new line numbers, then the line, tinted by kind.
+private struct FileDiff: View {
+    let repo: URL
+    let commit: GraphCommit
+    let file: FileChange
+    @State private var lines: [DiffLine]?
+    @State private var error: String?
+    @State private var viewportWidth: CGFloat = 0
+
+    /// Very large diffs are cut off rather than laid out in full.
+    private static let lineLimit = 3000
+
+    var body: some View {
+        Group {
+            if let error {
+                Text(error).foregroundStyle(.red).padding(8)
+            } else if let lines {
+                if lines.isEmpty {
+                    Text("No changes to show.").foregroundStyle(.tertiary).padding(8)
+                } else {
+                    ScrollView(.horizontal) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(lines.prefix(Self.lineLimit).enumerated()), id: \.offset) { DiffRow(line: $0.element) }
+                            if lines.count > Self.lineLimit {
+                                Text("\(lines.count - Self.lineLimit) more lines not shown.")
+                                    .foregroundStyle(.tertiary)
+                                    .padding(8)
+                            }
+                        }
+                        // Tints span the visible width even when every line is shorter.
+                        .frame(minWidth: viewportWidth, alignment: .leading)
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
+                }
+            } else {
+                ProgressView().controlSize(.small).padding(8)
+            }
+        }
+        .font(.system(size: 11).monospaced())
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
+        .padding(.leading, 16)
+        .task {
+            do {
+                lines = try await GitGraph.diff(repo: repo, commit: commit, file: file)
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+}
+
+private struct DiffRow: View {
+    let line: DiffLine
+
+    var body: some View {
+        HStack(spacing: 0) {
+            number(line.old)
+            number(line.new)
+            Text(prefix + line.text)
+                .foregroundStyle(foreground)
+                .fixedSize()
+                .padding(.leading, 6)
+                .padding(.trailing, 12)
+        }
+        .frame(maxWidth: .infinity, minHeight: 16, alignment: .leading)
+        .background(background)
+        .textSelection(.enabled)
+    }
+
+    private func number(_ value: Int?) -> some View {
+        Text(value.map(String.init) ?? "")
+            .foregroundStyle(.tertiary)
+            .frame(width: 38, alignment: .trailing)
+    }
+
+    private var prefix: String {
+        switch line.kind {
+        case .added: "+"
+        case .removed: "-"
+        case .context: " "
+        case .hunk, .note: ""
+        }
+    }
+
+    private var foreground: AnyShapeStyle {
+        switch line.kind {
+        case .hunk, .note: AnyShapeStyle(.secondary)
+        default: AnyShapeStyle(.primary)
+        }
+    }
+
+    private var background: Color {
+        switch line.kind {
+        case .added: .green.opacity(0.14)
+        case .removed: .red.opacity(0.14)
+        case .hunk: .blue.opacity(0.08)
+        case .context, .note: .clear
         }
     }
 }

@@ -63,9 +63,33 @@ struct CommitDetails: Sendable {
     let committerName: String
     let committerEmail: String
     let commitDate: Date
+    let signature: Signature
     let message: String
     /// Against the first parent, or everything for a root commit.
     let files: [FileChange]
+}
+
+/// A commit's signature, as git verifies it (`%G?`) with whatever GPG/SSH setup this Mac has.
+struct Signature: Sendable {
+    enum Status: Sendable {
+        case good, unknownValidity, cannotCheck, bad, expired, revoked, unsigned
+
+        init(code: String) {
+            self = switch code {
+            case "G": .good
+            case "U": .unknownValidity
+            case "E": .cannotCheck
+            case "B": .bad
+            case "X", "Y": .expired
+            case "R": .revoked
+            default: .unsigned
+            }
+        }
+    }
+
+    let status: Status
+    /// Who signed it, when git could tell.
+    let signer: String
 }
 
 struct FileChange: Identifiable, Sendable {
@@ -78,16 +102,27 @@ struct FileChange: Identifiable, Sendable {
     let deleted: Int?
 }
 
+struct DiffLine: Sendable {
+    enum Kind: Sendable { case hunk, context, added, removed, note }
+    let kind: Kind
+    /// The line without its `+`/`-`/space prefix.
+    let text: String
+    /// Line numbers in the old and new file; nil on the side the line doesn't exist.
+    let old: Int?
+    let new: Int?
+}
+
 enum GitGraph {
     static let commitLimit = 400
 
     static func details(repo: URL, commit: GraphCommit) async throws -> CommitDetails {
-        let format = ["%an", "%ae", "%at", "%cn", "%ce", "%ct", "%B"].joined(separator: "%x1f")
+        // The message goes last: it's the only field that can contain anything.
+        let format = ["%an", "%ae", "%at", "%cn", "%ce", "%ct", "%G?", "%GS", "%B"].joined(separator: "%x1f")
         let meta = try await Git.run(
             ["--no-optional-locks", "show", "-s", "--no-color", "--format=\(format)", commit.hash], in: repo
         )
-        let fields = meta.split(separator: "\u{1f}", maxSplits: 6, omittingEmptySubsequences: false).map(String.init)
-        guard fields.count == 7 else { throw GitError(message: "Unexpected output from git show") }
+        let fields = meta.split(separator: "\u{1f}", maxSplits: 8, omittingEmptySubsequences: false).map(String.init)
+        guard fields.count == 9 else { throw GitError(message: "Unexpected output from git show") }
 
         let base = commit.parents.first.map { [$0] } ?? ["--root"]
         let stat = try await Git.run(
@@ -98,8 +133,60 @@ enum GitGraph {
         return CommitDetails(
             authorName: fields[0], authorEmail: fields[1], authorDate: date(fields[2]),
             committerName: fields[3], committerEmail: fields[4], commitDate: date(fields[5]),
-            message: fields[6].trimmingCharacters(in: .whitespacesAndNewlines), files: parseNumstat(stat)
+            signature: Signature(status: Signature.Status(code: fields[6]), signer: fields[7]),
+            message: fields[8].trimmingCharacters(in: .whitespacesAndNewlines), files: parseNumstat(stat)
         )
+    }
+
+    /// One file's changes in `commit`, against the same base as `details` (first parent, or none).
+    static func diff(repo: URL, commit: GraphCommit, file: FileChange) async throws -> [DiffLine] {
+        let base = commit.parents.first.map { [$0] } ?? ["--root"]
+        let paths = [file.oldPath, file.path].compactMap { $0 }
+        let output = try await Git.run(
+            ["--no-optional-locks", "diff-tree", "-p", "-M", "--no-color", "--no-commit-id", "--no-ext-diff"]
+                + base + [commit.hash, "--"] + paths,
+            in: repo
+        )
+        return parseDiff(output)
+    }
+
+    /// Unified diff lines with their old/new line numbers. The file header before the first hunk
+    /// is dropped, except for binary files, which have no hunks.
+    static func parseDiff(_ output: String) -> [DiffLine] {
+        var lines: [DiffLine] = []
+        var old = 0, new = 0
+        var inHunk = false
+        for raw in output.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(raw)
+            if line.hasPrefix("@@") {
+                inHunk = true
+                // @@ -old,count +new,count @@ context
+                let ranges = line.split(separator: " ").dropFirst().prefix(2)
+                old = ranges.first.flatMap { Int($0.dropFirst().split(separator: ",").first ?? "") } ?? 0
+                new = ranges.dropFirst().first.flatMap { Int($0.dropFirst().split(separator: ",").first ?? "") } ?? 0
+                lines.append(DiffLine(kind: .hunk, text: line, old: nil, new: nil))
+            } else if !inHunk {
+                if line.hasPrefix("Binary files") {
+                    lines.append(DiffLine(kind: .note, text: "Binary file changed", old: nil, new: nil))
+                }
+            } else if line.hasPrefix("+") {
+                lines.append(DiffLine(kind: .added, text: String(line.dropFirst()), old: nil, new: new))
+                new += 1
+            } else if line.hasPrefix("-") {
+                lines.append(DiffLine(kind: .removed, text: String(line.dropFirst()), old: old, new: nil))
+                old += 1
+            } else if line.hasPrefix(" ") {
+                lines.append(DiffLine(kind: .context, text: String(line.dropFirst()), old: old, new: new))
+                old += 1
+                new += 1
+            } else if line.hasPrefix("\\") {
+                lines.append(DiffLine(kind: .note, text: String(line.dropFirst(2)), old: nil, new: nil))
+            } else if line.hasPrefix("diff --git") {
+                // A second file (only with a rename's two paths): wait for its first hunk.
+                inHunk = false
+            }
+        }
+        return lines
     }
 
     /// `--numstat -z`: `added\tdeleted\tpath\0`, or for a rename `added\tdeleted\t\0old\0new\0`.
