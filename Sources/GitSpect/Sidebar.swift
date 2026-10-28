@@ -124,7 +124,12 @@ struct SidebarRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             } icon: {
-                Image(systemName: "book.closed")
+                // Tinted when the repo has a remote; grey when it exists only on this Mac.
+                if repo.isLocalOnly {
+                    Image(systemName: "book.closed").foregroundStyle(.secondary)
+                } else {
+                    Image(systemName: "book.closed")
+                }
             }
             Spacer(minLength: 4)
             if model.running[repo.url] != nil {
@@ -141,10 +146,13 @@ struct SidebarRow: View {
             Metric(symbol: "arrow.up", count: ahead, color: .green)
                 .help("\(ahead) commit\(ahead == 1 ? "" : "s") to push")
         }
-        .help(repo.url.path)
+        .help(repo.url.path + "\n" + (repo.remotes.first.map { "\($0.name): \($0.displayName)" } ?? "Local only: no remote"))
         .contextMenu {
             Button("Fetch") { Task { await model.fetch(repo) } }
-                .disabled(model.running[repo.url] != nil)
+                .disabled(model.running[repo.url] != nil || repo.isLocalOnly)
+            if let web = repo.remotes.first?.webURL {
+                Button("Open \(web.host ?? "Remote") Page") { NSWorkspace.shared.open(web) }
+            }
             Divider()
             PathActions(path: repo.url.path)
         }

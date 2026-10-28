@@ -38,6 +38,7 @@ struct RepoDetail: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
+                remoteBadge
                 Spacer()
                 fetchButton
             }
@@ -55,6 +56,34 @@ struct RepoDetail: View {
         .contextMenu { PathActions(path: repo.url.path) }
     }
 
+    /// Where the repo is published: a link to the remote's page, or a "Local only" tag.
+    @ViewBuilder private var remoteBadge: some View {
+        if let remote = repo.remotes.first {
+            let label = Label(remote.displayName, systemImage: "network")
+                .font(.system(size: 11))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            let others = repo.remotes.dropFirst().map(\.name)
+            let help = "\(remote.name): \(remote.url)" + (others.isEmpty ? "" : "\nAlso: " + others.joined(separator: ", "))
+            if let web = remote.webURL {
+                Link(destination: web) { label }
+                    .help(help + "\nOpen in browser")
+            } else {
+                label
+                    .foregroundStyle(.secondary)
+                    .help(help)
+            }
+        } else {
+            Text("Local only")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(.quaternary, in: Capsule())
+                .help("This repository has no remote, so it exists only on this Mac.")
+        }
+    }
+
     @ViewBuilder private var fetchButton: some View {
         Button {
             Task { await model.fetch(repo) }
@@ -66,8 +95,8 @@ struct RepoDetail: View {
             }
         }
         .controlSize(.small)
-        .disabled(model.running[repo.url] != nil)
-        .help("git fetch --all --prune")
+        .disabled(model.running[repo.url] != nil || repo.isLocalOnly)
+        .help(repo.isLocalOnly ? "No remote to fetch from" : "git fetch --all --prune")
     }
 
     private var columnTitles: some View {

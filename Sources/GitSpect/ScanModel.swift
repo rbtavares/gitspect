@@ -145,7 +145,7 @@ final class ScanModel {
 
     func fetchAll() {
         guard fetchAllProgress == nil else { return }
-        let targets = repos
+        let targets = repos.filter { !$0.isLocalOnly }
         fetchAllProgress = (0, targets.count)
         Task {
             await forEach(targets) { repo in

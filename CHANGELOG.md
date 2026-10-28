@@ -16,6 +16,7 @@ First release.
 
 - Scan one or more folders for git repositories, shown in the sidebar as a tree grouped by parent folder.
 - Branches and worktrees side by side for each repository, with commits to pull and push.
+- Repositories without a remote are marked as local only; the others link to their remote's web page.
 - Fetch one repository or all of them in parallel, fast-forward pull, and push.
 - Delete branches and remove worktrees, one at a time or in bulk, with a confirmation before anything is forced.
 - Output panel with the live output of every git command GitSpect runs.

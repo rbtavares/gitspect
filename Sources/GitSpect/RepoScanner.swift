@@ -21,8 +21,44 @@ struct Repo: Identifiable, Hashable, Sendable {
     let relativePath: String
     let branches: [String]
     let worktrees: [Worktree]
+    /// Configured remotes, `origin` first.
+    let remotes: [Remote]
 
     var currentBranch: String? { worktrees.first(where: \.isMain)?.branch }
+    var isLocalOnly: Bool { remotes.isEmpty }
+}
+
+struct Remote: Hashable, Sendable {
+    let name: String
+    let url: String
+
+    /// The remote's web page, for hosts that serve one at the repository path
+    /// (`git@github.com:o/r.git` and `https://github.com/o/r.git` both become `https://github.com/o/r`).
+    var webURL: URL? {
+        var address = url
+        if address.hasSuffix(".git") { address.removeLast(4) }
+        if address.hasPrefix("https://") || address.hasPrefix("http://") || address.hasPrefix("ssh://") {
+            guard var components = URLComponents(string: address), let host = components.host else { return nil }
+            components.scheme = "https"
+            components.user = nil
+            components.password = nil
+            components.port = nil
+            components.host = host
+            return components.url
+        }
+        // scp-like syntax: [user@]host:path
+        guard !address.hasPrefix("/"), let colon = address.firstIndex(of: ":") else { return nil }
+        let host = address[..<colon].split(separator: "@").last.map(String.init) ?? ""
+        let path = address[address.index(after: colon)...]
+        guard !host.isEmpty, !path.isEmpty else { return nil }
+        return URL(string: "https://\(host)/\(path.drop { $0 == "/" })")
+    }
+
+    /// `github.com/owner/repo`, or the raw URL when it isn't a web address.
+    var displayName: String {
+        guard let web = webURL, let host = web.host else { return url }
+        return host + web.path
+    }
 }
 
 /// Read-only filesystem walk. Never invokes `git` (which can write `.git/index`).
@@ -90,8 +126,34 @@ enum RepoScanner {
 
         return Repo(
             url: dir, name: dir.lastPathComponent, root: root, relativePath: relative,
-            branches: branches(commonDir: commonDir), worktrees: worktrees
+            branches: branches(commonDir: commonDir), worktrees: worktrees, remotes: remotes(commonDir: commonDir)
         )
+    }
+
+    /// `[remote "name"]` sections of the repo's `config`, `origin` first. Ignores `include`d files.
+    private static func remotes(commonDir: URL) -> [Remote] {
+        guard let config = try? String(contentsOf: commonDir.appendingPathComponent("config"), encoding: .utf8)
+        else { return [] }
+
+        var remotes: [Remote] = []
+        var section: String?
+        for rawLine in config.split(whereSeparator: \.isNewline) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("[") {
+                // `[remote "origin"]` → origin; any other section ends the current remote.
+                let prefix = "[remote \""
+                section = line.hasPrefix(prefix) && line.hasSuffix("\"]")
+                    ? String(line.dropFirst(prefix.count).dropLast(2))
+                    : nil
+                continue
+            }
+            guard let name = section, !remotes.contains(where: { $0.name == name }) else { continue }
+            let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.count == 2, parts[0].lowercased() == "url", !parts[1].isEmpty {
+                remotes.append(Remote(name: name, url: parts[1]))
+            }
+        }
+        return remotes.sorted { ($0.name == "origin" ? 0 : 1, $0.name) < ($1.name == "origin" ? 0 : 1, $1.name) }
     }
 
     /// `.git` is a directory for regular repos, or a file with `gitdir: <path>` for worktrees and submodules.
