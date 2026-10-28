@@ -19,11 +19,9 @@ struct RepoDetail: View {
                 HStack(spacing: 0) {
                     pairList
                         .frame(maxWidth: .infinity)
-                        // Snap to the new width instead of animating it, so text doesn't reflow mid-motion.
-                        .transaction { $0.animation = nil }
                     if let target = model.graphTarget, target.repo == repo.url {
                         GraphPane(target: target, fraction: $graphFraction, totalWidth: proxy.size.width)
-                            // Slides over the list, which has already snapped to its new width.
+                            // Slides in as the list shrinks to make room, so the headers stay joined.
                             .transition(.move(edge: .trailing))
                             .zIndex(1)
                     }
