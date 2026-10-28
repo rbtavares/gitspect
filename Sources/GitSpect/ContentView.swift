@@ -111,7 +111,8 @@ struct ContentView: View {
         }
         .controlSize(.small)
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
     }
 
     private var pullAllButton: some View {
