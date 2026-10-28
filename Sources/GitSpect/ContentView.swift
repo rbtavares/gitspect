@@ -31,7 +31,7 @@ struct ContentView: View {
                     GeometryReader { proxy in
                         VStack(spacing: 0) {
                             detail
-                                .frame(maxHeight: .infinity)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                             if model.showsOutput {
                                 OutputPanel(height: $outputHeight, maxHeight: proxy.size.height - 200) {
                                     model.setOutputVisible(false)
