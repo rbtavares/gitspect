@@ -9,6 +9,7 @@ struct GraphPane: View {
     /// Width shared by the repo view and this pane.
     let totalWidth: CGFloat
     @Environment(ScanModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var rows: [GraphRow] = []
     @State private var laneCount = 1
     @State private var error: String?
@@ -168,7 +169,7 @@ struct GraphPane: View {
             // Jumping to a parent from the drawer brings it into view.
             .onChange(of: scrollTarget) {
                 guard let scrollTarget else { return }
-                withAnimation(.snappy(duration: 0.25)) { proxy.scrollTo(scrollTarget, anchor: .center) }
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) { proxy.scrollTo(scrollTarget, anchor: .center) }
                 self.scrollTarget = nil
             }
         }

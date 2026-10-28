@@ -7,6 +7,7 @@ struct Sidebar: View {
     @Binding var selection: URL?
     @Binding var collapsed: Set<String>
     @Environment(ScanModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var trashRequest: RepoGroup?
 
     static let rowHeight: CGFloat = 22
@@ -136,7 +137,7 @@ struct Sidebar: View {
     private func isExpanded(_ id: String) -> Bool { !collapsed.contains(id) }
 
     private func toggle(_ id: String) {
-        withAnimation(.snappy(duration: 0.2)) {
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
             if collapsed.remove(id) == nil { collapsed.insert(id) }
         }
     }
@@ -199,8 +200,9 @@ struct SidebarRow: View {
             Label {
                 Text(repo.name)
                     .font(.system(size: 13))
-                    // Quieter than the bold folder names; full strength once selected.
-                    .opacity(isSelected ? 1 : 0.5)
+                    // Quieter than the bold folder names; full strength once selected. The system's
+                    // secondary label colour, unlike a fixed opacity, gains contrast with Increase Contrast.
+                    .foregroundStyle(isSelected ? .primary : .secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             } icon: {
