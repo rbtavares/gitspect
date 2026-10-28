@@ -142,7 +142,7 @@ struct ContentView: View {
         .toolbar {
             // In the sidebar's part of the toolbar, beside the window buttons.
             ToolbarItem {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("GitSpect")
                         .font(.system(size: 13, weight: .semibold))
                     Text(subtitle)
