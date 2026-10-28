@@ -6,7 +6,6 @@ struct ContentView: View {
     @State private var query = ""
     @State private var collapsed: Set<String> = []
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
-    @State private var sidebarTitleWidth: CGFloat?
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("showsOutput") private var showsOutput = false
     @AppStorage("outputHeight") private var outputHeight = 200.0
@@ -170,17 +169,13 @@ struct ContentView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { sidebarBar }
         .toolbar {
             // In the sidebar's part of the toolbar, beside the window buttons. With the sidebar
-            // collapsed it would sit next to the repo title, so it fades out and folds its width
-            // away alongside the sidebar's own animation (and back in when it reopens).
+            // collapsed it would sit next to the repo title, so it's left out then. macOS moves
+            // toolbar items between the sidebar and main toolbar as the sidebar slides, and
+            // animating them during that move flashes, so it only fades in once the sidebar is open.
             ToolbarItem {
-                let isHidden = columnVisibility == .detailOnly
-                sidebarTitle
-                    .fixedSize()
-                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { sidebarTitleWidth = $0 }
-                    .frame(width: isHidden ? 0 : sidebarTitleWidth, alignment: .leading)
-                    .opacity(isHidden ? 0 : 1)
-                    .clipped()
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: isHidden)
+                if columnVisibility != .detailOnly {
+                    sidebarTitle.modifier(FadeInOnAppear(delay: 0.15, animated: !reduceMotion))
+                }
             }
         }
         .searchable(text: $query, placement: .sidebar, prompt: "Filter repos, branches, worktrees")
@@ -339,5 +334,20 @@ private struct SelectionBar: View {
         .background(.regularMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+    }
+}
+
+/// Fades a view in when it appears, after `delay`.
+private struct FadeInOnAppear: ViewModifier {
+    let delay: Double
+    let animated: Bool
+    @State private var isVisible = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isVisible || !animated ? 1 : 0)
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.2).delay(delay)) { isVisible = true }
+            }
     }
 }
