@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var query = ""
     @State private var collapsed: Set<String> = []
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
+    @State private var sidebarTitleWidth: CGFloat?
     @AppStorage("selectedRepoPath") private var selectedPath = ""
     @AppStorage("showsOutput") private var showsOutput = false
     @AppStorage("outputHeight") private var outputHeight = 200.0
@@ -168,11 +169,17 @@ struct ContentView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { sidebarBar }
         .toolbar {
             // In the sidebar's part of the toolbar, beside the window buttons. With the sidebar
-            // collapsed it would move in next to the repo title, so it's left out then.
+            // collapsed it would sit next to the repo title, so it fades out and folds its width
+            // away alongside the sidebar's own animation (and back in when it reopens).
             ToolbarItem {
-                if columnVisibility != .detailOnly {
-                    sidebarTitle
-                }
+                let isHidden = columnVisibility == .detailOnly
+                sidebarTitle
+                    .fixedSize()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { sidebarTitleWidth = $0 }
+                    .frame(width: isHidden ? 0 : sidebarTitleWidth, alignment: .leading)
+                    .opacity(isHidden ? 0 : 1)
+                    .clipped()
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: isHidden)
             }
         }
         .searchable(text: $query, placement: .sidebar, prompt: "Filter repos, branches, worktrees")
