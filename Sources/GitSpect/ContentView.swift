@@ -226,8 +226,7 @@ struct ContentView: View {
         } else if let folder = selectedFolder {
             FolderSummary(url: folder.url, repoCount: folder.repoCount)
         } else {
-            ContentUnavailableView("Select a Repository", systemImage: "sidebar.left",
-                                   description: Text("Choose a repo in the sidebar to see its branches and worktrees."))
+            Overview()
         }
     }
 
