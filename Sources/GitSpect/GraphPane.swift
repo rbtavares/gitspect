@@ -197,10 +197,38 @@ private struct CommitRow: View {
 
     var body: some View {
         let commit = row.commit
-        HStack(spacing: 6) {
+        let height = GraphCell.height(for: commit)
+        HStack(alignment: .top, spacing: 6) {
             GraphCell(row: row)
-                .frame(width: GraphCell.width(lanes: laneCount), height: GraphCell.rowHeight)
-            ForEach(commit.refs, id: \.self) { RefBadge(ref: $0) }
+                .frame(width: GraphCell.width(lanes: laneCount), height: height)
+            VStack(alignment: .leading, spacing: 0) {
+                summary
+                    .frame(height: GraphCell.rowHeight)
+                // Branches and tags on a line of their own, under the subject.
+                if !commit.refs.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(commit.refs, id: \.self) { RefBadge(ref: $0) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .clipped()
+                }
+            }
+        }
+        .padding(.leading, 6)
+        .padding(.trailing, 12)
+        .frame(height: height)
+        .background(isSelected ? Color.accentColor.opacity(0.18) : .clear)
+        .contentShape(Rectangle())
+        .help("\(commit.hash)\n\(commit.author) · \(commit.date.formatted(date: .abbreviated, time: .shortened))")
+        .contextMenu {
+            Button("Copy Commit Hash") { copy(commit.hash) }
+            Button("Copy Subject") { copy(commit.subject) }
+        }
+    }
+
+    private var summary: some View {
+        let commit = row.commit
+        return HStack(spacing: 6) {
             Text(commit.subject)
                 .font(.system(size: 12, weight: commit.isHead ? .semibold : .regular))
                 .lineLimit(1)
@@ -223,16 +251,6 @@ private struct CommitRow: View {
                 .foregroundStyle(.tertiary)
                 .fixedSize()
         }
-        .padding(.leading, 6)
-        .padding(.trailing, 12)
-        .frame(height: GraphCell.rowHeight)
-        .background(isSelected ? Color.accentColor.opacity(0.18) : .clear)
-        .contentShape(Rectangle())
-        .help("\(commit.hash)\n\(commit.author) · \(commit.date.formatted(date: .abbreviated, time: .shortened))")
-        .contextMenu {
-            Button("Copy Commit Hash") { copy(commit.hash) }
-            Button("Copy Subject") { copy(commit.subject) }
-        }
     }
 }
 
@@ -241,7 +259,14 @@ private struct CommitRow: View {
 private struct GraphCell: View {
     let row: GraphRow
 
+    /// Height of a row's first line, which the commit's dot is centred on.
     static let rowHeight: CGFloat = 24
+    /// Extra height for the line of ref badges.
+    static let refsHeight: CGFloat = 18
+
+    static func height(for commit: GraphCommit) -> CGFloat {
+        commit.refs.isEmpty ? rowHeight : rowHeight + refsHeight
+    }
     static let laneWidth: CGFloat = 14
     /// Very wide histories are clipped rather than squeezing the commit text out.
     static let maxLanes = 12
@@ -253,7 +278,8 @@ private struct GraphCell: View {
 
     var body: some View {
         Canvas { context, size in
-            let mid = size.height / 2
+            // Level with the subject; lines still run the full height of taller rows.
+            let mid = Self.rowHeight / 2
             func x(_ lane: Int) -> CGFloat { 3 + Self.laneWidth / 2 + CGFloat(lane) * Self.laneWidth }
             let dot = CGPoint(x: x(row.column), y: mid)
 
