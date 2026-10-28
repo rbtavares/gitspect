@@ -8,6 +8,8 @@ Each release's section becomes its GitHub release notes, so add an entry before 
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-28
+
 ### Changed
 
 - The app icon is now the blue style everywhere, and the icon choice in Settings is gone: macOS only showed a chosen icon reliably while GitSpect was running.
