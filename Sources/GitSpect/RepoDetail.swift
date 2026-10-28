@@ -140,12 +140,29 @@ struct PairRow: View {
         .frame(height: 22)
         .padding(.leading, 20)
         .background {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
+            // A worktree and its branch are one line: the outline marks the row whose graph is open.
+            let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+            shape
                 .fill(isHovered ? Color.secondary.opacity(0.08) : .clear)
+                .overlay(shape.strokeBorder(Color.accentColor.opacity(isGraphed ? 0.8 : 0), lineWidth: 1))
                 .padding(.leading, 12)
         }
         .contentShape(Rectangle())
+        // Clicks between the cells; clicks on a cell are handled there, along with selection.
+        .onTapGesture { toggleGraph() }
         .onHover { hovering in withAnimation(.easeOut(duration: 0.1)) { isHovered = hovering } }
+    }
+
+    /// The row's branch: the branch itself, or the one its worktree has checked out.
+    private var graphTarget: GraphTarget? {
+        guard let branch = pair.branch, repo.branches.contains(branch) else { return nil }
+        return GraphTarget(repo: repo.url, branch: branch)
+    }
+
+    private var isGraphed: Bool { graphTarget != nil && model.graphTarget == graphTarget }
+
+    private func toggleGraph() {
+        if let graphTarget { model.toggleGraph(graphTarget) }
     }
 
     // MARK: Branch side
@@ -179,8 +196,7 @@ struct PairRow: View {
                            help: "Delete local branch \(branch)")
             }
         }
-        .selectable(branchItem, isHovered: isHovered, isFocused: graphTarget != nil && model.graphTarget == graphTarget,
-                    onClick: graphTarget.map { target in { model.toggleGraph(target) } })
+        .selectable(branchItem, isHovered: isHovered, onClick: toggleGraph)
         .contextMenu {
             if let target = graphTarget {
                 Button(model.graphTarget == target ? "Hide Graph" : "Show Graph") { model.toggleGraph(target) }
@@ -190,12 +206,6 @@ struct PairRow: View {
                 Button("Delete Branch…", role: .destructive) { model.requestDeletion([item]) }
             }
         }
-    }
-
-    /// Any branch with commits has a graph, including ones checked out in a worktree.
-    private var graphTarget: GraphTarget? {
-        guard let branch = pair.branch, repo.branches.contains(branch) else { return nil }
-        return GraphTarget(repo: repo.url, branch: branch)
     }
 
     // MARK: Worktree side
@@ -234,9 +244,13 @@ struct PairRow: View {
             }
         }
         .help(pair.worktree?.path ?? "")
-        .selectable(worktreeItem, isHovered: isHovered)
+        .selectable(worktreeItem, isHovered: isHovered, onClick: toggleGraph)
         .contextMenu {
             if let worktree = pair.worktree {
+                if let target = graphTarget {
+                    Button(model.graphTarget == target ? "Hide Graph" : "Show Graph") { model.toggleGraph(target) }
+                    Divider()
+                }
                 PathActions(path: worktree.path)
                 if let item = worktreeItem {
                     Divider()
@@ -363,8 +377,6 @@ private struct PillButtonStyle: ButtonStyle {
 private struct SelectableCell: ViewModifier {
     let item: Selectable?
     let isHovered: Bool
-    /// Outlined in the accent colour, e.g. the branch open in the graph.
-    let isFocused: Bool
     /// Runs on a click without ⌘ or ⇧, whether or not the cell is selectable.
     let onClick: (() -> Void)?
     @Environment(ScanModel.self) private var model
@@ -376,7 +388,6 @@ private struct SelectableCell: ViewModifier {
             .padding(.horizontal, 4)
             .frame(height: 20)
             .background(Color.accentColor.opacity(isSelected ? (isHovered ? 0.28 : 0.2) : 0), in: shape)
-            .overlay(shape.strokeBorder(Color.accentColor.opacity(isFocused ? 0.8 : 0), lineWidth: 1))
             .contentShape(Rectangle())
             .onTapGesture {
                 let flags = NSEvent.modifierFlags
@@ -389,10 +400,8 @@ private struct SelectableCell: ViewModifier {
 }
 
 private extension View {
-    func selectable(
-        _ item: Selectable?, isHovered: Bool, isFocused: Bool = false, onClick: (() -> Void)? = nil
-    ) -> some View {
-        modifier(SelectableCell(item: item, isHovered: isHovered, isFocused: isFocused, onClick: onClick))
+    func selectable(_ item: Selectable?, isHovered: Bool, onClick: (() -> Void)? = nil) -> some View {
+        modifier(SelectableCell(item: item, isHovered: isHovered, onClick: onClick))
     }
 }
 
