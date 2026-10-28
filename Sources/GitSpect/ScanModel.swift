@@ -75,6 +75,8 @@ final class ScanModel {
     private(set) var fetchAllProgress: (done: Int, total: Int)?
     private(set) var selection: Set<Selectable> = []
     private var selectionAnchor: Selectable?
+    /// The branch shown in the graph pane, if it's open.
+    private(set) var graphTarget: GraphTarget?
     var deletionRequest: DeletionRequest?
     private(set) var log: [LogEntry] = []
     private var scanTask: Task<Void, Never>?
@@ -232,7 +234,9 @@ final class ScanModel {
         for (item, force) in branches {
             guard case .branch(let repoURL, let name) = item, let repo = repo(repoURL) else { continue }
             switch await deleteBranch(repo, branch: name, force: force) {
-            case .deleted: selection.remove(item)
+            case .deleted:
+                selection.remove(item)
+                if graphTarget == GraphTarget(repo: repoURL, branch: name) { graphTarget = nil }
             case .refused: refused.append(item)
             case .failed: break
             }
@@ -300,6 +304,17 @@ final class ScanModel {
     func clearSelection() {
         selection = []
         selectionAnchor = nil
+    }
+
+    // MARK: - Graph
+
+    /// Opens the graph for a branch; showing the branch already open closes it again.
+    func toggleGraph(_ target: GraphTarget) {
+        graphTarget = graphTarget == target ? nil : target
+    }
+
+    func closeGraph() {
+        graphTarget = nil
     }
 
     // MARK: - Output log

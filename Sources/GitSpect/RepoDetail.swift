@@ -179,12 +179,23 @@ struct PairRow: View {
                            help: "Delete local branch \(branch)")
             }
         }
-        .selectable(branchItem, isHovered: isHovered)
+        .selectable(branchItem, isHovered: isHovered, isFocused: graphTarget != nil && model.graphTarget == graphTarget,
+                    onClick: graphTarget.map { target in { model.toggleGraph(target) } })
         .contextMenu {
+            if let target = graphTarget {
+                Button(model.graphTarget == target ? "Hide Graph" : "Show Graph") { model.toggleGraph(target) }
+            }
             if let item = branchItem {
+                Divider()
                 Button("Delete Branch…", role: .destructive) { model.requestDeletion([item]) }
             }
         }
+    }
+
+    /// Any branch with commits has a graph, including ones checked out in a worktree.
+    private var graphTarget: GraphTarget? {
+        guard let branch = pair.branch, repo.branches.contains(branch) else { return nil }
+        return GraphTarget(repo: repo.url, branch: branch)
     }
 
     // MARK: Worktree side
@@ -352,29 +363,36 @@ private struct PillButtonStyle: ButtonStyle {
 private struct SelectableCell: ViewModifier {
     let item: Selectable?
     let isHovered: Bool
+    /// Outlined in the accent colour, e.g. the branch open in the graph.
+    let isFocused: Bool
+    /// Runs on a click without ⌘ or ⇧, whether or not the cell is selectable.
+    let onClick: (() -> Void)?
     @Environment(ScanModel.self) private var model
 
     func body(content: Content) -> some View {
         let isSelected = item.map(model.selection.contains) ?? false
+        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
         content
             .padding(.horizontal, 4)
             .frame(height: 20)
-            .background(
-                Color.accentColor.opacity(isSelected ? (isHovered ? 0.28 : 0.2) : 0),
-                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
-            )
+            .background(Color.accentColor.opacity(isSelected ? (isHovered ? 0.28 : 0.2) : 0), in: shape)
+            .overlay(shape.strokeBorder(Color.accentColor.opacity(isFocused ? 0.8 : 0), lineWidth: 1))
             .contentShape(Rectangle())
             .onTapGesture {
-                guard let item else { return }
                 let flags = NSEvent.modifierFlags
-                model.select(item, mode: flags.contains(.shift) ? .extend : flags.contains(.command) ? .toggle : .only)
+                let extends = flags.contains(.shift), toggles = flags.contains(.command)
+                if !extends && !toggles { onClick?() }
+                guard let item else { return }
+                model.select(item, mode: extends ? .extend : toggles ? .toggle : .only)
             }
     }
 }
 
 private extension View {
-    func selectable(_ item: Selectable?, isHovered: Bool) -> some View {
-        modifier(SelectableCell(item: item, isHovered: isHovered))
+    func selectable(
+        _ item: Selectable?, isHovered: Bool, isFocused: Bool = false, onClick: (() -> Void)? = nil
+    ) -> some View {
+        modifier(SelectableCell(item: item, isHovered: isHovered, isFocused: isFocused, onClick: onClick))
     }
 }
 
