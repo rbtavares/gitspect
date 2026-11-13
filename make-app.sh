@@ -22,7 +22,7 @@ APP=GitSpect.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_PATH/GitSpect" "$APP/Contents/MacOS/GitSpect"
-# Icons: rendered by scripts/make-icon.swift; delete Assets/ to regenerate.
+# Icons: rendered by scripts/make-icon.swift; delete the icons in Assets/ to regenerate.
 # AppIcon.icns, built from the blue style, is the app icon. The dark and light styles are kept
 # in Assets/ but not shipped.
 if [ ! -f Assets/AppIcon.icns ] || [ ! -f Assets/AppIcon-blue.png ]; then
@@ -40,6 +40,9 @@ if [ ! -f Assets/AppIcon.icns ] || [ ! -f Assets/AppIcon-blue.png ]; then
     iconutil -c icns "$ICONSET" -o Assets/AppIcon.icns
 fi
 cp Assets/AppIcon.icns "$APP/Contents/Resources/"
+# Fonts: Geist and Geist Mono (SIL Open Font License, shipped with its text). GitSpect registers
+# them for itself at launch; nothing is installed on the Mac.
+cp -R Assets/Fonts "$APP/Contents/Resources/Fonts"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
