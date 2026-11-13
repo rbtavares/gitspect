@@ -9,11 +9,11 @@ struct OutputPanel: View {
     @Environment(ScanModel.self) private var model
     @State private var dragStart: Double?
 
-    private static let minHeight: CGFloat = 90
+    private static let minHeight: CGFloat = 96
 
     var body: some View {
         VStack(spacing: 0) {
-            Divider()
+            Hairline()
                 .overlay {
                     // Wider invisible grab area around the hairline.
                     Color.clear
@@ -35,49 +35,48 @@ struct OutputPanel: View {
                                 }
                         )
                 }
-            HStack(spacing: 8) {
+                .zIndex(1)
+            PaneHeader {
                 Text("Output")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.dsLabel)
+                    .foregroundStyle(Palette.textMuted)
                 Spacer()
                 Button("Clear", action: model.clearLog)
-                    .buttonStyle(.borderless)
-                    .font(.system(size: 11))
+                    .buttonStyle(.ds(.ghost, small: true))
                     .disabled(model.log.isEmpty)
-                Button(action: close) { Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)) }
-                    .buttonStyle(.borderless)
-                    .help("Hide output (⇧⌘Y)")
+                IconButton(symbol: "xmark", help: "Hide output (⇧⌘Y)", size: 10, action: close)
             }
-            .padding(.horizontal, 12)
-            .frame(height: 26)
-            .background(.bar)
-            Divider()
 
             if model.log.isEmpty {
                 Text("Commands like fetch, pull and push show their output here.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .font(.dsSmall)
+                    .foregroundStyle(Palette.textFaint)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 8) {
-                            ForEach(entries) { LogEntryView(entry: $0).id($0.id) }
+                        // Not lazy: the log is capped at a couple of hundred entries, and a lazy
+                        // stack rebuilds rows as streaming output moves them, which flickers.
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(entries) { LogEntryView(entry: $0) }
                         }
-                        .padding(10)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         Color.clear.frame(height: 1).id("end")
                     }
-                    // Follow new commands, output and completions as they stream in.
-                    .onChange(of: model.log.reduce(0) { $0 + $1.output.count }) { proxy.scrollTo("end", anchor: .bottom) }
+                    // Stays pinned to the newest line as output grows, without a jump per chunk.
+                    .defaultScrollAnchor(.bottom)
+                    // A new command, or one finishing and moving up, brings the end back into view.
                     .onChange(of: model.log.count) { proxy.scrollTo("end", anchor: .bottom) }
                     .onChange(of: model.log.filter { $0.status == .running }.count) {
                         proxy.scrollTo("end", anchor: .bottom)
                     }
-                    .onAppear { proxy.scrollTo("end", anchor: .bottom) }
                 }
             }
         }
         .frame(height: clamped(height))
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Palette.canvas)
     }
 
     /// Finished commands in the order they finished, then the ones still running at the bottom.
@@ -97,44 +96,51 @@ private struct LogEntryView: View {
     let entry: LogEntry
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
                 statusIcon.frame(width: 12)
                 Text(entry.repo)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.dsLabel)
+                    .foregroundStyle(Palette.text)
                 Text(entry.command)
-                    .font(.system(size: 11).monospaced())
-                    .foregroundStyle(.secondary)
+                    .font(.dsMonoSmall)
+                    .foregroundStyle(Palette.textMuted)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
                 Spacer(minLength: 8)
                 Text(timing)
-                    .font(.system(size: 10).monospacedDigit())
-                    .foregroundStyle(.tertiary)
+                    .font(.dsMonoSmall)
+                    .foregroundStyle(Palette.textFaint)
             }
             if !entry.output.isEmpty {
                 Text(cleaned(entry.output))
-                    .font(.system(size: 11).monospaced())
-                    .foregroundStyle(entry.status == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                    .font(.dsMonoSmall)
+                    .lineSpacing(3)
+                    .foregroundStyle(entry.status == .failed ? Palette.danger : Palette.textMuted)
                     .textSelection(.enabled)
-                    .padding(.leading, 18)
+                    .padding(.leading, 20)
             }
         }
     }
 
     @ViewBuilder private var statusIcon: some View {
         switch entry.status {
-        case .running: ProgressView().controlSize(.mini)
-        case .succeeded: Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.green)
-        case .failed: Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.red)
+        case .running:
+            Spinner(size: 10)
+        case .succeeded:
+            Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.positive)
+                .accessibilityLabel("Succeeded")
+        case .failed:
+            Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Palette.danger)
+                .accessibilityLabel("Failed")
         }
     }
 
     private var timing: String {
         let start = entry.startedAt.formatted(date: .omitted, time: .standard)
         guard let end = entry.finishedAt else { return start }
-        return start + " · " + String(format: "%.1fs", end.timeIntervalSince(entry.startedAt))
+        return start + "  " + String(format: "%.1fs", end.timeIntervalSince(entry.startedAt))
     }
 
     /// Git redraws progress lines with `\r`; keep only the final state of each line.

@@ -1,53 +1,50 @@
-import AppKit
 import SwiftUI
 
-/// AppKit's search field (magnifier, placeholder, clear button), placed like any other view.
-/// SwiftUI's `.searchable` sidebar field positions itself and moves when the sidebar's content changes.
-struct SearchField: NSViewRepresentable {
+/// The sidebar's filter: a magnifier, the text, and a clear button once there's something to clear.
+/// ⌘F (Edit → Filter Repositories) puts the cursor in it; Escape empties it.
+struct SearchField: View {
     @Binding var text: String
     let prompt: String
+    /// Changes each time the cursor is asked for.
+    var focusRequests = 0
+    @FocusState private var isFocused: Bool
 
-    func makeNSView(context: Context) -> NSSearchField {
-        let field = NSSearchField()
-        field.placeholderString = prompt
-        field.sendsSearchStringImmediately = true
-        field.delegate = context.coordinator
-        // The clear button reports through the action rather than a text change.
-        field.target = context.coordinator
-        field.action = #selector(Coordinator.changed(_:))
-        return field
-    }
-
-    func updateNSView(_ field: NSSearchField, context: Context) {
-        context.coordinator.text = $text
-        if field.stringValue != text { field.stringValue = text }
-        // Follows SwiftUI's .controlSize, so it matches the buttons beside it (28pt at large).
-        let size: NSControl.ControlSize = switch context.environment.controlSize {
-        case .mini: .mini
-        case .small: .small
-        case .large, .extraLarge: .large
-        default: .regular
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Metric.radius, style: .continuous)
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Palette.textFaint)
+            TextField("", text: $text, prompt: Text(prompt).foregroundStyle(Palette.textFaint))
+                .textFieldStyle(.plain)
+                .font(.dsBody)
+                .foregroundStyle(Palette.text)
+                .focused($isFocused)
+                .onExitCommand {
+                    if text.isEmpty { isFocused = false } else { text = "" }
+                }
+            if !text.isEmpty {
+                Button { text = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.textFaint)
+                        // A 24pt target around the 12pt glyph.
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, -6)
+                .help("Clear filter")
+                .accessibilityLabel("Clear filter")
+            }
         }
-        if field.controlSize != size {
-            field.controlSize = size
-            field.font = .systemFont(ofSize: NSFont.systemFontSize(for: size))
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
-
-    @MainActor final class Coordinator: NSObject, NSSearchFieldDelegate {
-        var text: Binding<String>
-
-        init(text: Binding<String>) { self.text = text }
-
-        func controlTextDidChange(_ notification: Notification) {
-            guard let field = notification.object as? NSSearchField else { return }
-            text.wrappedValue = field.stringValue
-        }
-
-        @objc func changed(_ sender: NSSearchField) {
-            text.wrappedValue = sender.stringValue
-        }
+        .padding(.horizontal, 8)
+        .frame(height: Metric.control)
+        .background(Palette.canvas, in: shape)
+        // The border doubles as the focus ring.
+        .overlay(shape.strokeBorder(isFocused ? Palette.accent : Palette.borderStrong, lineWidth: 1))
+        .contentShape(shape)
+        .onTapGesture { isFocused = true }
+        .onChange(of: focusRequests) { isFocused = true }
     }
 }
