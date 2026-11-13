@@ -8,6 +8,30 @@ Each release's section becomes its GitHub release notes, so add an entry before 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-13
+
+### Changed
+
+- GitSpect has its own interface instead of the stock macOS controls: its own top bar level with the window buttons, sidebar, buttons, filter field, dialogs and settings page, in a light and a dark palette that both honour Increase Contrast.
+- Text is set in Geist, and everything git says (branches, hashes, paths, command output) in Geist Mono. Both fonts ship inside the app.
+- Rows are taller and every button is at least 24 points, so they're easier to hit; the alternating row stripes are gone in favour of a highlight under the pointer.
+- The sidebar can be resized and hidden (View → Hide Sidebar, ⌃⌘S), and shows how many repositories it found. Repositories without a remote are marked "local".
+- The commit graph leaves out the author when the pane is narrow, so the subject stays readable; the author is still in the commit details.
+- Settings is one page: scanned folders, then appearance.
+
+- Right-clicking one of several selected rows offers to delete all of them; on a row outside the selection it still acts on that row alone.
+- Add Folders (⇧⌘O) and Rescan Folders (⌘R) are in the File menu, so they work with the sidebar hidden.
+- A detached worktree's commit is in its tag's tooltip rather than on the row.
+- In a small window the commit graph takes the whole pane instead of squeezing the branch list; closing it brings the list back.
+
+### Added
+
+- ⌘F puts the cursor in the filter field; Escape clears it.
+
+### Fixed
+
+- The output panel no longer rebuilds and jumps as output streams in.
+
 ## [0.1.2] - 2026-10-28
 
 ### Changed
