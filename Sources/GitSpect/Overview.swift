@@ -1,51 +1,56 @@
 import SwiftUI
 
-/// The detail area when nothing is selected: a summary of every scanned repo.
+/// The detail area when nothing is selected: where every scanned repo stands.
 struct Overview: View {
     @Environment(ScanModel.self) private var model
 
     var body: some View {
-        VStack(spacing: 28) {
-            VStack(spacing: 10) {
-                if let image = NSApp.applicationIconImage {
-                    Image(nsImage: image)
-                        .resizable()
-                        .frame(width: 80, height: 80)
-                        .accessibilityHidden(true)
-                }
-                Text("GitSpect")
-                    .font(.system(size: 22, weight: .semibold))
+        VStack(alignment: .leading, spacing: 32) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("All repositories")
+                    .font(Typeface.ui(20, .semibold))
+                    .foregroundStyle(Palette.text)
                 Text("Select a repository to see its branches, worktrees and history, or a folder to manage it.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 360)
+                    .font(.dsBody)
+                    .foregroundStyle(Palette.textMuted)
+                    .lineSpacing(3)
             }
 
             if model.isScanning && model.repos.isEmpty {
-                ProgressView("Scanning…")
-                    .controlSize(.small)
+                HStack(spacing: 8) {
+                    Spinner()
+                    Text("Scanning…")
+                        .font(.dsBody)
+                        .foregroundStyle(Palette.textMuted)
+                }
             } else {
-                HStack(spacing: 12) {
+                // One board split by rules rather than four separate cards: the figures are read together.
+                HStack(spacing: 0) {
                     Stat(value: model.repos.count, label: model.repos.count == 1 ? "Repository" : "Repositories",
                          detail: "in \(model.roots.count) folder\(model.roots.count == 1 ? "" : "s")")
-                    Stat(value: totals.behind, label: "To Pull", detail: "commits behind upstream",
-                         color: totals.behind > 0 ? .blue : nil)
-                    Stat(value: totals.ahead, label: "To Push", detail: "commits ahead of upstream",
-                         color: totals.ahead > 0 ? .green : nil)
-                    Stat(value: localOnly, label: "Local Only", detail: "repositories with no remote")
+                    Hairline(vertical: true)
+                    Stat(value: totals.behind, label: "To pull", detail: "commits behind upstream",
+                         color: totals.behind > 0 ? Palette.accent : nil)
+                    Hairline(vertical: true)
+                    Stat(value: totals.ahead, label: "To push", detail: "commits ahead of upstream",
+                         color: totals.ahead > 0 ? Palette.positive : nil)
+                    Hairline(vertical: true)
+                    Stat(value: localOnly, label: "Local only", detail: "repositories with no remote")
                 }
-                // Every card as tall as the tallest.
+                // Every cell as tall as the tallest.
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 640)
+                .overlay(RoundedRectangle(cornerRadius: Metric.radiusLarge, style: .continuous)
+                    .strokeBorder(Palette.border, lineWidth: 1))
             }
 
-            HStack(spacing: 18) {
-                Shortcut(keys: ["⇧", "⌘", "O"], action: "Add Folders")
+            VStack(alignment: .leading, spacing: 10) {
+                Shortcut(keys: ["⌘", "F"], action: "Filter repositories")
+                Shortcut(keys: ["⇧", "⌘", "O"], action: "Add folders")
                 Shortcut(keys: ["⌘", "R"], action: "Rescan")
-                Shortcut(keys: ["⇧", "⌘", "Y"], action: "Show Output")
+                Shortcut(keys: ["⇧", "⌘", "Y"], action: "Show output")
             }
         }
+        .frame(maxWidth: 640, alignment: .leading)
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -64,23 +69,22 @@ private struct Stat: View {
     var color: Color?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(.dsLabel)
+                .foregroundStyle(Palette.textMuted)
             Text("\(value)")
-                .font(.system(size: 26, weight: .semibold).monospacedDigit())
-                .foregroundStyle(color.map(AnyShapeStyle.init) ?? AnyShapeStyle(.primary))
+                .font(Typeface.mono(26, .medium))
+                .foregroundStyle(color ?? Palette.text)
                 .contentTransition(.numericText())
             Text(detail)
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-                // Two lines in every card, so the numbers line up whatever wraps.
+                .font(.dsCaption)
+                .foregroundStyle(Palette.textFaint)
+                // Two lines in every cell, so the numbers line up whatever wraps.
                 .lineLimit(2, reservesSpace: true)
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
@@ -91,19 +95,14 @@ private struct Shortcut: View {
     let action: String
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 12) {
             HStack(spacing: 3) {
-                ForEach(keys, id: \.self) { key in
-                    Text(key)
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(minWidth: 20, minHeight: 20)
-                        .padding(.horizontal, 2)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                }
+                ForEach(keys, id: \.self) { Keycap($0) }
             }
+            .frame(width: 76, alignment: .leading)
             Text(action)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .font(.dsSmall)
+                .foregroundStyle(Palette.textMuted)
         }
         .accessibilityElement(children: .combine)
     }

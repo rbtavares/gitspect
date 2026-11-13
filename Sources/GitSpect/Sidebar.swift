@@ -6,14 +6,12 @@ struct Sidebar: View {
     let roots: [RootNode]
     @Binding var selection: URL?
     @Binding var collapsed: Set<String>
+    /// Asks the window to put a question to the user.
+    let confirm: (ConfirmRequest) -> Void
     @Environment(ScanModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var trashRequest: RepoGroup?
 
-    static let rowHeight: CGFloat = 22
-
-    /// The tree flattened into visible rows. Nested DisclosureGroups in a List leave stale
-    /// rows behind when collapsed, so expansion and indentation are handled here instead.
+    /// The tree flattened into visible rows, so expansion and indentation are handled here.
     private enum Row: Identifiable {
         case root(RootNode)
         case folder(RepoGroup)
@@ -29,64 +27,43 @@ struct Sidebar: View {
     }
 
     var body: some View {
-        // No list selection: macOS draws it blue or grey depending on keyboard focus. Rows are
-        // selected by click and highlighted here, always grey.
-        List {
-            ForEach(rows) { row in
-                switch row {
-                case .root(let node):
-                    FolderRow(title: node.root.lastPathComponent, depth: 0, isExpanded: isExpanded(node.root.path),
-                              toggle: { toggle(node.root.path) }, click: { clicked(node.root) })
-                        .help(node.root.path)
-                        .listRowBackground(highlight(node.root))
-                        .contextMenu {
-                            PathActions(path: node.root.path)
-                            Divider()
-                            // Added folders are only taken out of GitSpect, never deleted.
-                            Button("Remove from GitSpect") { model.remove(root: node.root) }
-                        }
-                case .folder(let group):
-                    FolderRow(title: group.path, depth: 1, isExpanded: isExpanded(group.id),
-                              toggle: { toggle(group.id) }, click: { clicked(group.url) })
-                        .listRowBackground(highlight(group.url))
-                        .contextMenu {
-                            if let url = group.url {
-                                PathActions(path: url.path)
+        // GitSpect's own rows rather than a system list: one highlight colour whatever has
+        // keyboard focus, and one row height whatever the system's sidebar size setting.
+        ScrollView {
+            LazyVStack(spacing: 1) {
+                ForEach(rows) { row in
+                    switch row {
+                    case .root(let node):
+                        FolderRow(title: node.root.lastPathComponent, depth: 0, isExpanded: isExpanded(node.root.path),
+                                  isSelected: selection == node.root,
+                                  toggle: { toggle(node.root.path) }, click: { clicked(node.root) })
+                            .help(node.root.path)
+                            .contextMenu {
+                                PathActions(path: node.root.path)
                                 Divider()
-                                Button("Move to Trash…", role: .destructive) { trashRequest = group }
+                                // Added folders are only taken out of GitSpect, never deleted.
+                                Button("Remove from GitSpect") { model.remove(root: node.root) }
                             }
-                        }
-                case .repo(let repo, let depth):
-                    // Icon directly under the parent folder's icon (Finder-style), so a sibling
-                    // folder's chevron sits in the same column as the repo icons.
-                    HStack(spacing: 0) {
-                        Color.clear.frame(width: FolderRow.chevronWidth)
-                        SidebarRow(repo: repo, isSelected: selection == repo.url)
+                    case .folder(let group):
+                        FolderRow(title: group.path, depth: 1, isExpanded: isExpanded(group.id),
+                                  isSelected: group.url != nil && selection == group.url,
+                                  toggle: { toggle(group.id) }, click: { clicked(group.url) })
+                            .contextMenu {
+                                if let url = group.url {
+                                    PathActions(path: url.path)
+                                    Divider()
+                                    Button("Move to Trash…", role: .destructive) { requestTrash(group) }
+                                }
+                            }
+                    case .repo(let repo, let depth):
+                        // Name directly under the parent folder's name, past its chevron.
+                        SidebarRow(repo: repo, isSelected: selection == repo.url, depth: depth) { clicked(repo.url) }
                     }
-                    .padding(.leading, FolderRow.indent(depth - 1))
-                    .frame(maxWidth: .infinity, minHeight: Self.rowHeight, alignment: .leading)
-                    .clickableAcrossRow()
-                    .onTapGesture { clicked(repo.url) }
-                    .listRowBackground(highlight(repo.url))
-
                 }
             }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
         }
-        .listStyle(.sidebar)
-        // Rows set their own (compact) height.
-        .environment(\.defaultMinListRowHeight, 1)
-        .confirmationDialog(
-            "Move “\(trashRequest?.path ?? "")” to the Trash?",
-            isPresented: Binding(get: { trashRequest != nil }, set: { if !$0 { trashRequest = nil } }),
-            presenting: trashRequest
-        ) { group in
-            Button("Move to Trash", role: .destructive) { moveToTrash(group) }
-        } message: { group in
-            Text("It holds \(group.repos.count) repositor\(group.repos.count == 1 ? "y" : "ies"), including any uncommitted or unpushed work in them. You can put it back from the Trash.")
-        }
-        // Compact rows regardless of the system's sidebar icon size setting. Small rows shrink text
-        // to 11pt, so folder and repo names set 13pt on their own text.
-        .environment(\.sidebarRowSize, .small)
     }
 
     private var rows: [Row] {
@@ -112,13 +89,12 @@ struct Sidebar: View {
         selection = selection == url ? nil : url
     }
 
-    /// The selected row's background: a grey rounded highlight inset like the system sidebar's.
-    @ViewBuilder private func highlight(_ url: URL?) -> some View {
-        if let url, selection == url {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.secondary.opacity(0.22))
-                .padding(.horizontal, 10)
-        }
+    private func requestTrash(_ group: RepoGroup) {
+        confirm(ConfirmRequest(
+            title: "Move “\(group.path)” to the Trash?",
+            message: "It holds \(group.repos.count) repositor\(group.repos.count == 1 ? "y" : "ies"), including any uncommitted or unpushed work in them. You can put it back from the Trash.",
+            actions: [.init(title: "Move to Trash") { moveToTrash(group) }]
+        ))
     }
 
     private func moveToTrash(_ group: RepoGroup) {
@@ -143,45 +119,58 @@ struct Sidebar: View {
     }
 }
 
+/// The background every sidebar row shares: clear, lit on hover, solid when selected.
+private struct RowBackground: View {
+    let isSelected: Bool
+    let isHovered: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: Metric.radius, style: .continuous)
+            .fill(isSelected ? Palette.selected : isHovered ? Palette.hover : .clear)
+    }
+}
+
 /// A root or org folder. Selectable like a repo; only its chevron opens and closes it.
 private struct FolderRow: View {
-    static let chevronWidth: CGFloat = 14
-    static func indent(_ depth: Int) -> CGFloat { CGFloat(depth) * 14 }
+    static let chevronWidth: CGFloat = Metric.controlSmall
+    static func indent(_ depth: Int) -> CGFloat { CGFloat(depth) * 12 }
 
     let title: String
     let depth: Int
     let isExpanded: Bool
+    let isSelected: Bool
     let toggle: () -> Void
     /// A click on the name (not the chevron).
     let click: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 0) {
             Button(action: toggle) {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(Palette.textFaint)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .frame(width: Self.chevronWidth, height: 20)
+                    .frame(width: Self.chevronWidth, height: Metric.row)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isExpanded ? "Collapse" : "Expand")
-            // Name only: the chevron marks it as a folder. Set on the text itself, like repo names,
-            // since small sidebar rows shrink text to 11pt.
-            HStack(spacing: 0) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .padding(.leading, 4)
-                Spacer(minLength: 0)
-            }
-            .clickableAcrossRow()
-            .onTapGesture(perform: click)
+            Text(title)
+                .font(.dsBodyMedium)
+                .foregroundStyle(Palette.text)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
         }
         .padding(.leading, Self.indent(depth))
-        .frame(minHeight: Sidebar.rowHeight)
+        .padding(.trailing, 8)
+        .frame(height: Metric.row)
+        .background(RowBackground(isSelected: isSelected, isHovered: isHovered))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: click)
+        .onHover { isHovered = $0 }
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
     }
 }
@@ -189,45 +178,39 @@ private struct FolderRow: View {
 struct SidebarRow: View {
     let repo: Repo
     let isSelected: Bool
+    let depth: Int
+    let click: () -> Void
     @Environment(ScanModel.self) private var model
+    @State private var isHovered = false
 
     var body: some View {
         let statuses = model.statuses[repo.url]?.values ?? [:].values
         let behind = statuses.reduce(0) { $0 + $1.behind }
         let ahead = statuses.reduce(0) { $0 + $1.ahead }
 
-        HStack(spacing: 6) {
-            Label {
-                Text(repo.name)
-                    .font(.system(size: 13))
-                    // Quieter than the bold folder names; full strength once selected. The system's
-                    // secondary label colour, unlike a fixed opacity, gains contrast with Increase Contrast.
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            } icon: {
-                // Tinted when the repo has a remote; grey when it exists only on this Mac.
-                if repo.isLocalOnly {
-                    SidebarIcon(systemName: "book.closed").foregroundStyle(.secondary)
-                } else {
-                    SidebarIcon(systemName: "book.closed")
-                }
-            }
+        HStack(spacing: 4) {
+            Text(repo.name)
+                .font(.dsBody)
+                // Quieter than the folder names; full strength once selected or pointed at.
+                .foregroundStyle(isSelected || isHovered ? Palette.text : Palette.textMuted)
+                .lineLimit(1)
+                .truncationMode(.middle)
             Spacer(minLength: 4)
             // While git runs on the repo, the spinner stands in for its counts.
             if model.running[repo.url] != nil {
-                ProgressView().controlSize(.mini)
+                Spinner(size: 10).padding(.trailing, 4)
             } else {
                 if model.errors[repo.url] != nil {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 10))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger)
                         .help(model.errors[repo.url] ?? "")
+                        .accessibilityLabel("Last command failed")
                 }
                 // Pull/push only take space when non-zero; each pulls or pushes every branch it can.
                 if behind > 0 {
                     let branches = model.pullableBranches(in: repo).count
-                    SyncPill(symbol: "arrow.down", count: behind, color: .blue) { model.pullAll(in: repo) }
+                    SyncPill(symbol: "arrow.down", count: behind, color: Palette.accent) { model.pullAll(in: repo) }
                         .disabled(branches == 0)
                         .help(branches == 0
                               ? "\(behind) commit\(behind == 1 ? "" : "s") behind, but every branch has diverged: needs a merge or rebase"
@@ -235,14 +218,29 @@ struct SidebarRow: View {
                 }
                 if ahead > 0 {
                     let branches = model.pushableBranches(in: repo).count
-                    SyncPill(symbol: "arrow.up", count: ahead, color: .green) { model.pushAll(in: repo) }
+                    SyncPill(symbol: "arrow.up", count: ahead, color: Palette.positive) { model.pushAll(in: repo) }
                         .disabled(branches == 0)
                         .help(branches == 0
                               ? "\(ahead) commit\(ahead == 1 ? "" : "s") ahead, but no branch can be pushed as-is (diverged or a differently named upstream)"
                               : "Push \(ahead) commit\(ahead == 1 ? "" : "s") (\(branches) branch\(branches == 1 ? "" : "es"))")
                 }
+                // A repo with no remote exists only on this Mac.
+                if repo.isLocalOnly {
+                    Text("local")
+                        .font(.dsCaption)
+                        .foregroundStyle(isSelected || isHovered ? Palette.textMuted : Palette.textFaint)
+                        .padding(.trailing, 2)
+                }
             }
         }
+        .padding(.leading, FolderRow.chevronWidth + FolderRow.indent(depth - 1))
+        .padding(.trailing, 6)
+        .frame(height: Metric.row)
+        .background(RowBackground(isSelected: isSelected, isHovered: isHovered))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: click)
+        .onHover { isHovered = $0 }
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .help(repo.url.path + "\n" + (repo.remotes.first.map { "\($0.name): \($0.displayName)" } ?? "Local only: no remote"))
         .contextMenu {
             Button("Fetch") { Task { await model.fetch(repo) } }
@@ -253,26 +251,5 @@ struct SidebarRow: View {
             Divider()
             PathActions(path: repo.url.path)
         }
-    }
-}
-
-/// Repo icons at one size and width, so their names line up.
-private struct SidebarIcon: View {
-    let systemName: String
-
-    var body: some View {
-        Image(systemName: systemName)
-            .font(.system(size: 13))
-            .frame(width: 18)
-    }
-}
-
-private extension View {
-    /// The list pads each row above and below its content; clicks there would miss the row.
-    /// This stretches the clickable area over that padding without changing the layout.
-    func clickableAcrossRow() -> some View {
-        padding(.vertical, 4)
-            .contentShape(Rectangle())
-            .padding(.vertical, -4)
     }
 }

@@ -26,7 +26,9 @@ struct GraphPane: View {
     @State private var dragStart: CGFloat?
 
     static let minWidth: CGFloat = 300
-    static let headerHeight: CGFloat = 26
+    /// Narrower than this, rows drop the author so the subject keeps its room.
+    static let authorWidth: CGFloat = 520
+    static let headerHeight = Metric.paneHeader
     /// Room always left for the repo view.
     static let minDetailWidth: CGFloat = 320
 
@@ -48,13 +50,13 @@ struct GraphPane: View {
             }
         }
         .frame(width: clamped(totalWidth * fraction))
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Palette.canvas)
         .task(id: LoadKey(target: target, status: status, refreshes: refreshes)) { await load() }
         .onChange(of: target) { selectedCommit = nil }
     }
 
     private var resizeHandle: some View {
-        Divider()
+        Hairline(vertical: true)
             .overlay {
                 // Wider invisible grab area around the hairline.
                 Color.clear
@@ -77,55 +79,41 @@ struct GraphPane: View {
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
+        PaneHeader {
             Text(target.branch)
-                .font(.system(size: 11, weight: .semibold).monospaced())
+                .font(.dsMono)
+                .foregroundStyle(Palette.text)
                 .lineLimit(1)
                 .truncationMode(.middle)
             if let status {
-                Text("+ \(status.upstreamName)")
-                    .font(.system(size: 11).monospaced())
-                    .foregroundStyle(.secondary)
+                Text(status.upstreamName)
+                    .font(.dsMonoSmall)
+                    .foregroundStyle(Palette.textFaint)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .layoutPriority(-1)
+                    .help("Shown together with \(status.upstreamName)")
             }
             Spacer(minLength: 4)
-            if isLoading { ProgressView().controlSize(.mini) }
-            Button { refreshes += 1 } label: {
-                Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .semibold))
-            }
-            .buttonStyle(.borderless)
-            .disabled(isLoading)
-            .help("Reload graph")
-            Button(action: model.closeGraph) {
-                Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
-            }
-            .buttonStyle(.borderless)
-            .help("Close graph")
+            if isLoading { Spinner(size: 10).padding(.trailing, 4) }
+            IconButton(symbol: "arrow.clockwise", help: "Reload graph", size: 11) { refreshes += 1 }
+                .disabled(isLoading)
+            IconButton(symbol: "xmark", help: "Close graph", size: 10, action: model.closeGraph)
         }
-        .padding(.horizontal, 12)
-        .frame(height: Self.headerHeight)
-        .background(.bar)
-        // Inside the height, like the list's column header, so the two line up exactly.
-        .overlay(alignment: .bottom) { Divider() }
     }
 
     @ViewBuilder private var content: some View {
         if let error {
             Text(error)
-                .font(.system(size: 11))
-                .foregroundStyle(.red)
+                .font(.dsMonoSmall)
+                .foregroundStyle(Palette.danger)
                 .textSelection(.enabled)
-                .padding(12)
+                .padding(16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else if rows.isEmpty {
             Text(isLoading ? "" : "No commits.")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+                .font(.dsSmall)
+                .foregroundStyle(Palette.textFaint)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             GeometryReader { proxy in
@@ -153,15 +141,16 @@ struct GraphPane: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(rows) { row in
-                        CommitRow(row: row, laneCount: laneCount, isSelected: selectedCommit == row.commit.hash)
+                        CommitRow(row: row, laneCount: laneCount, isSelected: selectedCommit == row.commit.hash,
+                                  showsAuthor: clamped(totalWidth * fraction) >= Self.authorWidth)
                             .id(row.commit.hash)
                             .onTapGesture { selectedCommit = selectedCommit == row.commit.hash ? nil : row.commit.hash }
                     }
                     if rows.count >= GitGraph.commitLimit {
                         Text("Showing the latest \(GitGraph.commitLimit) commits.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
-                            .padding(10)
+                            .font(.dsCaption)
+                            .foregroundStyle(Palette.textFaint)
+                            .padding(12)
                     }
                 }
                 .padding(.vertical, 4)
@@ -186,6 +175,9 @@ struct GraphPane: View {
             if sliding > 0 { try? await Task.sleep(for: .seconds(sliding)) }
             guard !Task.isCancelled else { return }
             rows = laidOut
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["GITSPECT_STAGE_COMMIT"] != nil { selectedCommit = laidOut.first?.commit.hash }
+            #endif
             laneCount = laidOut.reduce(1) { max($0, $1.lanesIn.count, $1.lanesOut.count, $1.column + 1) }
             error = nil
         } catch {
@@ -196,7 +188,9 @@ struct GraphPane: View {
     }
 
     private func clamped(_ value: CGFloat) -> CGFloat {
-        min(max(value, Self.minWidth), max(totalWidth - Self.minDetailWidth, Self.minWidth))
+        // Without room for both minimums, the graph takes the whole pane; closing it brings the list back.
+        guard totalWidth >= Self.minWidth + Self.minDetailWidth else { return totalWidth }
+        return min(max(value, Self.minWidth), totalWidth - Self.minDetailWidth)
     }
 }
 
@@ -204,6 +198,8 @@ private struct CommitRow: View {
     let row: GraphRow
     let laneCount: Int
     let isSelected: Bool
+    let showsAuthor: Bool
+    @State private var isHovered = false
 
     var body: some View {
         let commit = row.commit
@@ -224,11 +220,12 @@ private struct CommitRow: View {
                 }
             }
         }
-        .padding(.leading, 6)
-        .padding(.trailing, 12)
+        .padding(.leading, 8)
+        .padding(.trailing, 16)
         .frame(height: height)
-        .background(isSelected ? Color.accentColor.opacity(0.18) : .clear)
+        .background(isSelected ? Palette.accent.opacity(Palette.tint) : isHovered ? Palette.hover : .clear)
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
         .help("\(commit.hash)\n\(commit.author) · \(commit.date.formatted(date: .abbreviated, time: .shortened))")
         .contextMenu {
             Button("Copy Commit Hash") { copy(commit.hash) }
@@ -238,27 +235,32 @@ private struct CommitRow: View {
 
     private var summary: some View {
         let commit = row.commit
-        return HStack(spacing: 6) {
+        // Faint text is only legible on the bare canvas; on a lit row it steps up to muted.
+        let quiet = isSelected || isHovered ? Palette.textMuted : Palette.textFaint
+        return HStack(spacing: 8) {
             Text(commit.subject)
-                .font(.system(size: 12, weight: commit.isHead ? .semibold : .regular))
+                .font(commit.isHead ? .dsBodyMedium : .dsBody)
+                .foregroundStyle(Palette.text)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
             Spacer(minLength: 8)
-            Text(commit.author)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(maxWidth: 110, alignment: .trailing)
-                .layoutPriority(-1)
+            if showsAuthor {
+                Text(commit.author)
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.textMuted)
+                    .lineLimit(1)
+                    .frame(width: 96, alignment: .trailing)
+            }
             Text(commit.date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
-                .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(.tertiary)
+                .font(.dsCaption)
+                .monospacedDigit()
+                .foregroundStyle(quiet)
                 .lineLimit(1)
                 .fixedSize()
             Text(commit.shortHash)
-                .font(.system(size: 11).monospaced())
-                .foregroundStyle(.tertiary)
+                .font(.dsMonoSmall)
+                .foregroundStyle(quiet)
                 .fixedSize()
         }
     }
@@ -270,9 +272,9 @@ private struct GraphCell: View {
     let row: GraphRow
 
     /// Height of a row's first line, which the commit's dot is centred on.
-    nonisolated static let rowHeight: CGFloat = 24
+    nonisolated static let rowHeight: CGFloat = 28
     /// Extra height for the line of ref badges.
-    static let refsHeight: CGFloat = 18
+    static let refsHeight: CGFloat = 20
 
     static func height(for commit: GraphCommit) -> CGFloat {
         commit.refs.isEmpty ? rowHeight : rowHeight + refsHeight
@@ -284,8 +286,7 @@ private struct GraphCell: View {
 
     static func width(lanes: Int) -> CGFloat { CGFloat(min(lanes, maxLanes)) * laneWidth + 6 }
 
-    nonisolated static let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .yellow, .red, .indigo, .mint]
-    nonisolated static func color(_ lane: Int) -> Color { palette[lane % palette.count] }
+    nonisolated static func color(_ lane: Int) -> Color { Palette.lanes[lane % Palette.lanes.count] }
 
     var body: some View {
         Canvas { context, size in
@@ -305,7 +306,7 @@ private struct GraphCell: View {
                     path.addCurve(to: to, control1: CGPoint(x: from.x, y: from.y + bend),
                                   control2: CGPoint(x: to.x, y: to.y - bend))
                 }
-                context.stroke(path, with: .color(Self.color(lane)), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                context.stroke(path, with: .color(Self.color(lane)), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
             }
 
             for (lane, heading) in row.lanesIn.enumerated() {
@@ -324,8 +325,8 @@ private struct GraphCell: View {
             let circle = Path(ellipseIn: CGRect(x: dot.x - radius, y: dot.y - radius, width: radius * 2, height: radius * 2))
             if row.commit.parents.count > 1 {
                 // Merge commits are hollow.
-                context.fill(circle, with: .color(Color(nsColor: .textBackgroundColor)))
-                context.stroke(circle, with: .color(Self.color(row.column)), lineWidth: 1.6)
+                context.fill(circle, with: .color(Palette.canvas))
+                context.stroke(circle, with: .color(Self.color(row.column)), lineWidth: 1.5)
             } else {
                 context.fill(circle, with: .color(Self.color(row.column)))
             }
@@ -339,16 +340,16 @@ private struct RefBadge: View {
 
     var body: some View {
         let color: Color = switch ref.kind {
-        case .local: .green
-        case .remote: .blue
-        case .tag: .orange
+        case .local: Palette.positive
+        case .remote: Palette.accent
+        case .tag: Palette.caution
         }
         HStack(spacing: 2) {
             if ref.kind == .tag {
                 Image(systemName: "tag.fill").font(.system(size: 8))
             }
             Text(ref.name)
-                .font(.system(size: 10, weight: .medium).monospaced())
+                .font(.dsMonoSmallMedium)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 // Long names are cut to 160pt; fixedSize below keeps short ones at their own width
@@ -356,9 +357,9 @@ private struct RefBadge: View {
                 .frame(maxWidth: 160)
         }
         .foregroundStyle(color)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 1)
-        .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+        .padding(.horizontal, 5)
+        .frame(height: 16)
+        .background(color.opacity(Palette.tint), in: RoundedRectangle(cornerRadius: Metric.radiusSmall, style: .continuous))
         .fixedSize()
         .help(ref.name)
     }
@@ -382,49 +383,38 @@ private struct CommitDrawer: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Divider()
+            Hairline()
             header
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
                     message
                     people
                     if !commit.parents.isEmpty || !commit.refs.isEmpty { links }
                     files
                 }
-                .padding(12)
+                .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
             .frame(height: min(contentHeight, max(maxHeight - GraphPane.headerHeight - 1, 0)))
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Palette.canvas)
         .task(id: commit.hash) { await load() }
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
+        PaneHeader {
             Text("Commit")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.dsLabel)
+                .foregroundStyle(Palette.textMuted)
             Text(commit.shortHash)
-                .font(.system(size: 11).monospaced())
-                .foregroundStyle(.secondary)
+                .font(.dsMonoSmall)
+                .foregroundStyle(Palette.text)
                 .textSelection(.enabled)
-            Button { copy(commit.hash) } label: {
-                Image(systemName: "doc.on.doc").font(.system(size: 9))
-            }
-            .buttonStyle(.borderless)
-            .help("Copy full hash")
+            IconButton(symbol: "doc.on.doc", help: "Copy full hash", size: 10) { copy(commit.hash) }
             Spacer()
-            Button(action: close) {
-                Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
-            }
-            .buttonStyle(.borderless)
-            .help("Close commit details")
+            IconButton(symbol: "xmark", help: "Close commit details", size: 10, action: close)
         }
-        .padding(.horizontal, 12)
-        .frame(height: GraphPane.headerHeight)
-        .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
     }
 
     @ViewBuilder private var message: some View {
@@ -432,13 +422,15 @@ private struct CommitDrawer: View {
         let lines = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
         VStack(alignment: .leading, spacing: 6) {
             Text(lines.first.map(String.init) ?? "")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.dsTitle)
+                .foregroundStyle(Palette.text)
             if lines.count > 1 {
                 let body = lines[1].trimmingCharacters(in: .whitespacesAndNewlines)
                 if !body.isEmpty {
                     Text(body)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .font(.dsSmall)
+                        .lineSpacing(3)
+                        .foregroundStyle(Palette.textMuted)
                 }
             }
         }
@@ -447,7 +439,7 @@ private struct CommitDrawer: View {
     }
 
     @ViewBuilder private var people: some View {
-        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
             if let details {
                 person("Author", details.authorName, details.authorEmail, details.authorDate)
                 // Rebases and cherry-picks keep the author but change who committed, and when.
@@ -462,11 +454,12 @@ private struct CommitDrawer: View {
             } else {
                 GridRow {
                     label("Author")
-                    Text("\(commit.author) · \(commit.date.formatted(date: .abbreviated, time: .shortened))")
+                    Text("\(commit.author), \(commit.date.formatted(date: .abbreviated, time: .shortened))")
                 }
             }
         }
-        .font(.system(size: 11))
+        .font(.dsCaption)
+        .foregroundStyle(Palette.text)
     }
 
     private func person(_ role: String, _ name: String, _ email: String, _ date: Date) -> some View {
@@ -474,22 +467,22 @@ private struct CommitDrawer: View {
             label(role)
             VStack(alignment: .leading, spacing: 1) {
                 Text("\(name) <\(email)>").textSelection(.enabled)
-                Text("\(date.formatted(date: .abbreviated, time: .shortened)) · \(date.formatted(.relative(presentation: .named)))")
-                    .foregroundStyle(.secondary)
+                Text("\(date.formatted(date: .abbreviated, time: .shortened)), \(date.formatted(.relative(presentation: .named)))")
+                    .foregroundStyle(Palette.textMuted)
             }
         }
     }
 
     private var links: some View {
-        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
             if !commit.parents.isEmpty {
                 GridRow {
                     label(commit.parents.count > 1 ? "Parents" : "Parent")
                     HStack(spacing: 8) {
                         ForEach(commit.parents, id: \.self) { parent in
                             Button(String(parent.prefix(7))) { select(parent) }
-                                .buttonStyle(.link)
-                                .font(.system(size: 11).monospaced())
+                                .buttonStyle(LinkButtonStyle())
+                                .font(.dsMonoSmall)
                                 .disabled(!isInGraph(parent))
                                 .help(isInGraph(parent) ? "Show \(parent)" : "\(parent) is older than the commits loaded")
                         }
@@ -505,30 +498,32 @@ private struct CommitDrawer: View {
                 }
             }
         }
-        .font(.system(size: 11))
+        .font(.dsCaption)
+        .foregroundStyle(Palette.text)
     }
 
     @ViewBuilder private var files: some View {
         if let error {
             Text(error)
-                .font(.system(size: 11))
-                .foregroundStyle(.red)
+                .font(.dsMonoSmall)
+                .foregroundStyle(Palette.danger)
                 .textSelection(.enabled)
         } else if let details {
             let added = details.files.reduce(0) { $0 + ($1.added ?? 0) }
             let deleted = details.files.reduce(0) { $0 + ($1.deleted ?? 0) }
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Text("\(details.files.count) file\(details.files.count == 1 ? "" : "s") changed")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.dsLabel)
+                        .foregroundStyle(Palette.textMuted)
                     LineCounts(added: added, deleted: deleted)
                     if commit.parents.count > 1 {
                         Text("against first parent")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
+                            .font(.dsCaption)
+                            .foregroundStyle(Palette.textFaint)
                     }
                 }
-                LazyVStack(alignment: .leading, spacing: 2) {
+                LazyVStack(alignment: .leading, spacing: 1) {
                     ForEach(details.files) { file in
                         FileRow(file: file, isExpanded: expanded.contains(file.id)) {
                             if expanded.remove(file.id) == nil { expanded.insert(file.id) }
@@ -541,14 +536,14 @@ private struct CommitDrawer: View {
                 }
             }
         } else {
-            ProgressView().controlSize(.small)
+            Spinner()
         }
     }
 
     private func label(_ text: String) -> some View {
         Text(text)
-            .foregroundStyle(.secondary)
-            .gridColumnAlignment(.trailing)
+            .foregroundStyle(Palette.textMuted)
+            .gridColumnAlignment(.leading)
     }
 
     private func load() async {
@@ -559,6 +554,9 @@ private struct CommitDrawer: View {
             let loaded = try await GitGraph.details(repo: repo, commit: commit)
             guard !Task.isCancelled else { return }
             details = loaded
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["GITSPECT_STAGE_DIFF"] != nil, let file = loaded.files.first { expanded = [file.id] }
+            #endif
         } catch {
             guard !Task.isCancelled else { return }
             self.error = error.localizedDescription
@@ -571,20 +569,20 @@ private struct SignatureLabel: View {
 
     var body: some View {
         let (symbol, text, color): (String, String, Color) = switch signature.status {
-        case .good: ("checkmark.seal.fill", "Verified", .green)
-        case .unknownValidity: ("checkmark.seal", "Signed, key not trusted", .orange)
-        case .cannotCheck: ("questionmark.diamond", "Signed, can't verify (key not on this Mac)", .secondary)
-        case .bad: ("xmark.seal.fill", "Bad signature", .red)
-        case .expired: ("clock.badge.exclamationmark", "Signed with an expired key", .orange)
-        case .revoked: ("xmark.seal", "Signed with a revoked key", .red)
-        case .unsigned: ("seal", "Not signed", .secondary)
+        case .good: ("checkmark.seal.fill", "Verified", Palette.positive)
+        case .unknownValidity: ("checkmark.seal", "Signed, key not trusted", Palette.caution)
+        case .cannotCheck: ("questionmark.diamond", "Signed, can't verify (key not on this Mac)", Palette.textMuted)
+        case .bad: ("xmark.seal.fill", "Bad signature", Palette.danger)
+        case .expired: ("clock.badge.exclamationmark", "Signed with an expired key", Palette.caution)
+        case .revoked: ("xmark.seal", "Signed with a revoked key", Palette.danger)
+        case .unsigned: ("seal", "Not signed", Palette.textMuted)
         }
         HStack(spacing: 4) {
             Image(systemName: symbol).foregroundStyle(color)
-            Text(text).foregroundStyle(signature.status == .unsigned ? .secondary : .primary)
+            Text(text).foregroundStyle(signature.status == .unsigned ? Palette.textMuted : Palette.text)
             if !signature.signer.isEmpty {
                 Text(signature.signer)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textMuted)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
@@ -597,20 +595,18 @@ private struct FileRow: View {
     let file: FileChange
     let isExpanded: Bool
     let toggle: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "chevron.right")
                 .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Palette.textMuted)
                 .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                .frame(width: 10)
-            Image(systemName: file.oldPath == nil ? "doc" : "arrow.right.doc.on.clipboard")
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
-                .frame(width: 14)
+                .frame(width: 12)
             Text(file.oldPath.map { "\($0) → \(file.path)" } ?? file.path)
-                .font(.system(size: 11).monospaced())
+                .font(.dsMonoSmall)
+                .foregroundStyle(Palette.text)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .help(file.oldPath.map { "Renamed from \($0)" } ?? file.path)
@@ -619,13 +615,16 @@ private struct FileRow: View {
                 LineCounts(added: added, deleted: deleted)
             } else {
                 Text("binary")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .font(.dsCaption)
+                    .foregroundStyle(Palette.textMuted)
             }
         }
-        .frame(height: 18)
+        .padding(.horizontal, 6)
+        .frame(height: Metric.controlSmall)
+        .background(isHovered ? Palette.hover : .clear, in: RoundedRectangle(cornerRadius: Metric.radius, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture(perform: toggle)
+        .onHover { isHovered = $0 }
         .accessibilityAddTraits(.isButton)
         .accessibilityValue(isExpanded ? "Diff shown" : "Diff hidden")
         .contextMenu {
@@ -650,17 +649,17 @@ private struct FileDiff: View {
     var body: some View {
         Group {
             if let error {
-                Text(error).foregroundStyle(.red).padding(8)
+                Text(error).foregroundStyle(Palette.danger).padding(8)
             } else if let lines {
                 if lines.isEmpty {
-                    Text("No changes to show.").foregroundStyle(.tertiary).padding(8)
+                    Text("No changes to show.").foregroundStyle(Palette.textFaint).padding(8)
                 } else {
                     ScrollView(.horizontal) {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(Array(lines.prefix(Self.lineLimit).enumerated()), id: \.offset) { DiffRow(line: $0.element) }
                             if lines.count > Self.lineLimit {
                                 Text("\(lines.count - Self.lineLimit) more lines not shown.")
-                                    .foregroundStyle(.tertiary)
+                                    .foregroundStyle(Palette.textFaint)
                                     .padding(8)
                             }
                         }
@@ -670,15 +669,16 @@ private struct FileDiff: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
                 }
             } else {
-                ProgressView().controlSize(.small).padding(8)
+                Spinner().padding(8)
             }
         }
-        .font(.system(size: 11).monospaced())
+        .font(.dsMonoSmall)
+        .foregroundStyle(Palette.text)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
-        .padding(.leading, 16)
+        .background(Palette.sidebar)
+        .clipShape(RoundedRectangle(cornerRadius: Metric.radius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Metric.radius, style: .continuous).strokeBorder(Palette.border, lineWidth: 1))
+        .padding(.leading, 18)
         .task {
             do {
                 lines = try await GitGraph.diff(repo: repo, commit: commit, file: file)
@@ -702,14 +702,14 @@ private struct DiffRow: View {
                 .padding(.leading, 6)
                 .padding(.trailing, 12)
         }
-        .frame(maxWidth: .infinity, minHeight: 16, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 18, alignment: .leading)
         .background(background)
         .textSelection(.enabled)
     }
 
     private func number(_ value: Int?) -> some View {
         Text(value.map(String.init) ?? "")
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(Palette.textFaint)
             .frame(width: 38, alignment: .trailing)
     }
 
@@ -722,18 +722,18 @@ private struct DiffRow: View {
         }
     }
 
-    private var foreground: AnyShapeStyle {
+    private var foreground: Color {
         switch line.kind {
-        case .hunk, .note: AnyShapeStyle(.secondary)
-        default: AnyShapeStyle(.primary)
+        case .hunk, .note: Palette.textMuted
+        default: Palette.text
         }
     }
 
     private var background: Color {
         switch line.kind {
-        case .added: .green.opacity(0.14)
-        case .removed: .red.opacity(0.14)
-        case .hunk: .blue.opacity(0.08)
+        case .added: Palette.positive.opacity(Palette.tint)
+        case .removed: Palette.danger.opacity(Palette.tint)
+        case .hunk: Palette.accent.opacity(0.08)
         case .context, .note: .clear
         }
     }
@@ -745,10 +745,10 @@ private struct LineCounts: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Text("+\(added)").foregroundStyle(.green)
-            Text("−\(deleted)").foregroundStyle(.red)
+            Text("+\(added)").foregroundStyle(Palette.positive)
+            Text("−\(deleted)").foregroundStyle(Palette.danger)
         }
-        .font(.system(size: 11, weight: .medium).monospacedDigit())
+        .font(.dsMonoSmallMedium)
         .fixedSize()
     }
 }

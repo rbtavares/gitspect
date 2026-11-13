@@ -9,9 +9,9 @@ struct RepoDetail: View {
     /// Share of the width below the header taken by the graph pane; starts as an even split.
     @AppStorage("graphFraction") private var graphFraction = 0.5
 
-    static let columnGap: CGFloat = 28
-    /// The system's alternating row colour, as in Finder's list view.
-    static let stripe = Color(nsColor: NSColor.alternatingContentBackgroundColors.last ?? .clear)
+    static let columnGap: CGFloat = 24
+    /// Space either side of the rows; their highlights reach to it.
+    static let inset: CGFloat = 8
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -36,37 +36,40 @@ struct RepoDetail: View {
 
     private var pairList: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
+            LazyVStack(alignment: .leading, spacing: 1, pinnedViews: .sectionHeaders) {
                 Section {
-                    // Finder-style stripes on every other row, full width under the highlights.
-                    ForEach(Array(repo.pairs.enumerated()), id: \.element.id) { index, pair in
+                    ForEach(repo.pairs) { pair in
                         PairRow(pair: pair, repo: repo)
-                            .padding(.trailing, 12)
-                            .background(index.isMultiple(of: 2) ? Color.clear : Self.stripe)
+                            .padding(.horizontal, Self.inset)
                     }
                 } header: {
                     columnTitles
+                        .padding(.bottom, 4)
                 }
             }
             // Room for the floating selection bar.
-            .padding(.bottom, 64)
+            .padding(.bottom, 72)
         }
     }
 
-    /// Errors from the last git command on this repo. The name, path and remote live in the toolbar.
+    /// Errors from the last git command on this repo. The name, path and remote live in the top bar.
     @ViewBuilder private var errorBanner: some View {
         if let error = model.errors[repo.url] {
-            Text(error)
-                .font(.system(size: 11))
-                .foregroundStyle(.red)
-                .lineLimit(3)
-                .textSelection(.enabled)
-                .help(error)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.red.opacity(0.08))
-                .overlay(alignment: .bottom) { Divider() }
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10))
+                Text(error)
+                    .font(.dsMonoSmall)
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+            }
+            .foregroundStyle(Palette.danger)
+            .help(error)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.danger.opacity(0.1))
+            .overlay(alignment: .bottom) { Hairline() }
         }
     }
 
@@ -76,110 +79,131 @@ struct RepoDetail: View {
             Color.clear.frame(width: Self.columnGap)
             ColumnTitle("Worktrees", count: repo.worktrees.count)
         }
-        .padding(.leading, 20)
-        .padding(.trailing, 12)
+        .padding(.horizontal, Self.inset + PairRow.padding)
         // Matches the graph pane's header, so the two read as one bar when it's open.
-        .frame(height: GraphPane.headerHeight)
-        .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
+        .frame(height: Metric.paneHeader)
+        .background(Palette.canvas)
+        .overlay(alignment: .bottom) { Hairline() }
     }
 }
 
-/// The selected repo's name, path and remote, with its Fetch button. Shown in the window toolbar.
+/// The selected repo's name, path and remote. Shown in the top bar.
 struct RepoTitle: View {
     let repo: Repo
-    @Environment(ScanModel.self) private var model
 
     var body: some View {
-        // Name over path and remote, like a window title and subtitle.
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(repo.name)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                HStack(spacing: 14) {
-                    Text((repo.url.path as NSString).abbreviatingWithTildeInPath)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(repo.url.path)
-                    remoteBadge
-                }
-            }
+        // Name, then where it lives and where it's published, all on the bar's one line.
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            // The name and path take no clicks, so dragging them moves the window like the rest
+            // of the bar. The sidebar row has the path's menu.
+            Text(repo.name)
+                .font(.dsTitle)
+                .foregroundStyle(Palette.text)
+                .lineLimit(1)
+                .layoutPriority(1)
+                .allowsHitTesting(false)
+            Text((repo.url.path as NSString).abbreviatingWithTildeInPath)
+                .font(.dsMonoSmall)
+                .foregroundStyle(Palette.textFaint)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .allowsHitTesting(false)
+            remoteBadge
         }
-        .contextMenu { PathActions(path: repo.url.path) }
     }
 
-    /// Where the repo is published: a link to the remote's page, or a "Local only" tag.
+    /// Where the repo is published: a link to the remote's page, or a "local only" tag.
     @ViewBuilder private var remoteBadge: some View {
         if let remote = repo.remotes.first {
-            // Toolbars reduce a Label to its icon, so icon and text are laid out by hand.
-            let label = HStack(spacing: 4) {
-                Image(systemName: "network")
-                Text(remote.displayName)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .font(.system(size: 11))
             let others = repo.remotes.dropFirst().map(\.name)
             let help = "\(remote.name): \(remote.url)" + (others.isEmpty ? "" : "\nAlso: " + others.joined(separator: ", "))
+            let label = Text(remote.displayName)
+                .font(.dsMonoSmall)
+                .lineLimit(1)
+                .truncationMode(.middle)
             if let web = remote.webURL {
-                Link(destination: web) { label }
+                Button { NSWorkspace.shared.open(web) } label: { label }
+                    .buttonStyle(LinkButtonStyle())
                     .help(help + "\nOpen in browser")
             } else {
                 label
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textFaint)
                     .help(help)
             }
         } else {
-            Text("Local only")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
-                .background(.quaternary, in: Capsule())
+            Tag("local only")
                 .help("This repository has no remote, so it exists only on this Mac.")
         }
     }
-
 }
 
-/// Fetches the selected repo; sits at the trailing end of the toolbar.
+/// Text that opens something: accent-coloured, underlined while pointed at.
+struct LinkButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Face(configuration: configuration)
+    }
+
+    private struct Face: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var isHovered = false
+
+        var body: some View {
+            configuration.label
+                .foregroundStyle(isEnabled ? Palette.accent : Palette.textFaint)
+                .underline(isHovered && isEnabled)
+                .opacity(configuration.isPressed ? 0.7 : 1)
+                // Taller than the text, so it's an easier target.
+                .padding(.vertical, 5)
+                .contentShape(Rectangle())
+                .onHover { isHovered = $0 }
+        }
+    }
+}
+
+/// Fetches the selected repo; sits at the trailing end of the top bar.
 struct RepoFetchButton: View {
     let repo: Repo
     @Environment(ScanModel.self) private var model
 
     var body: some View {
+        let isFetching = model.running[repo.url] == .fetch
         Button {
             Task { await model.fetch(repo) }
         } label: {
-            if model.running[repo.url] == .fetch {
-                Label("Fetching…", systemImage: "arrow.down.circle")
-                    .labelStyle(.titleAndIcon)
-            } else {
-                Label("Fetch", systemImage: "arrow.down.circle")
-                    .labelStyle(.titleAndIcon)
+            HStack(spacing: 6) {
+                if isFetching {
+                    Spinner(size: 10)
+                } else {
+                    Image(systemName: "arrow.down").font(.system(size: 10, weight: .semibold))
+                }
+                Text(isFetching ? "Fetching" : "Fetch")
             }
         }
+        .buttonStyle(.ds(.secondary))
+        // Never squeezed: the path and remote beside it give way instead.
+        .fixedSize()
         .disabled(model.running[repo.url] != nil || repo.isLocalOnly)
         .help(repo.isLocalOnly ? "No remote to fetch from" : "git fetch --all --prune")
     }
 }
 
-/// Styled like the other pane headers (Output, graph, commit): 11pt semibold, count in grey.
+/// Styled like the other pane headers (Output, graph, commit): the name, then its count, quieter.
 private struct ColumnTitle: View {
     let text: String
     let count: Int
     init(_ text: String, count: Int) { self.text = text; self.count = count }
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Text(text)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.dsLabel)
+                .foregroundStyle(Palette.textMuted)
+                .lineLimit(1)
             Text("\(count)")
-                .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(.secondary)
+                .font(.dsMonoSmall)
+                .foregroundStyle(Palette.textFaint)
+                .fixedSize()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -191,24 +215,27 @@ struct PairRow: View {
     @State private var isHovered = false
     @Environment(ScanModel.self) private var model
 
+    static let padding: CGFloat = 8
+
     var body: some View {
         HStack(spacing: 0) {
             branchCell.frame(maxWidth: .infinity, alignment: .leading)
             Color.clear.frame(width: RepoDetail.columnGap)
             worktreeCell.frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(height: 22)
-        .padding(.leading, 20)
+        .padding(.leading, Self.padding)
+        .padding(.trailing, 2)
+        .frame(height: Metric.row)
         .background {
             // A branch and its worktree are one line, selected as one.
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(isHovered ? 0.28 : 0.2)
-                      : isHovered ? Color.secondary.opacity(0.08) : .clear)
-                .padding(.leading, 12)
+            RoundedRectangle(cornerRadius: Metric.radius, style: .continuous)
+                .fill(isSelected ? Palette.accent.opacity(isHovered ? Palette.tintHover : Palette.tint)
+                      : isHovered ? Palette.hover : .clear)
         }
         .contentShape(Rectangle())
         .onTapGesture { click() }
-        .onHover { hovering in withAnimation(.easeOut(duration: 0.1)) { isHovered = hovering } }
+        .onHover { isHovered = $0 }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var row: RowID { RowID(repo: repo.url, pair: pair.id) }
@@ -217,6 +244,9 @@ struct PairRow: View {
     private var rowItem: Selectable? { repo.rowItem(pair) }
 
     private var isSelected: Bool { model.selection.contains(row) }
+
+    /// Faint text is only legible on the bare canvas; on a lit row it steps up to muted.
+    private var quiet: Color { isSelected || isHovered ? Palette.textMuted : Palette.textFaint }
 
     /// A click selects the row and shows its graph; ⌘ adds or removes it, ⇧ extends a range.
     private func click() {
@@ -228,7 +258,13 @@ struct PairRow: View {
         if !isSelected {
             Button("Show Graph") { model.select(row, mode: .only) }
         }
-        if let rowItem {
+        // Like Finder: a right-click on one of several selected rows acts on all of them; on a
+        // row outside the selection, on that row alone.
+        let selected = isSelected ? model.deletionItems(model.selection) : []
+        if selected.count > 1 {
+            Divider()
+            Button("Delete \(selected.count) Selected…", role: .destructive) { model.requestDeletion(selected) }
+        } else if let rowItem {
             Divider()
             // The dialog offers what applies: the branch, the worktree, or both.
             Button("Delete…", role: .destructive) { model.requestDeletion([rowItem]) }
@@ -239,29 +275,27 @@ struct PairRow: View {
 
     // Containers stay unconditional so empty cells still hold their half of the row.
     private var branchCell: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             if let branch = pair.branch {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(pair.worktree == nil ? .tertiary : .secondary)
                 Text(branch)
-                    .font(.system(size: 12).monospaced())
-                    .foregroundStyle(pair.worktree == nil ? .secondary : .primary)
+                    .font(.dsMono)
+                    // Branches checked out in a worktree stand out from the ones that aren't.
+                    .foregroundStyle(pair.worktree == nil ? Palette.textMuted : Palette.text)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .layoutPriority(1)
                     .help(branch)
                 if !repo.branches.contains(branch) {
-                    Tag("no commits", color: .secondary)
+                    Tag("no commits")
                 }
                 Spacer(minLength: 8)
-                SyncStatus(repo: repo, branch: branch)
+                SyncStatus(repo: repo, branch: branch, quiet: quiet)
                 // A row with a worktree has its delete button on the worktree side.
                 DeleteSlot(item: pair.worktree == nil ? rowItem : nil, operation: .delete(branch: branch),
                            isVisible: isHovered)
             }
         }
-        .cellFrame()
+        .frame(height: Metric.row)
         .contextMenu { rowMenu }
     }
 
@@ -271,22 +305,26 @@ struct PairRow: View {
         HStack(spacing: 6) {
             if let worktree = pair.worktree {
                 Text(worktree.name)
-                    .font(.system(size: 12, weight: worktree.isMain ? .medium : .regular))
-                    .foregroundStyle(worktree.isMissing ? .secondary : .primary)
+                    .font(worktree.isMain ? .dsBodyMedium : .dsBody)
+                    .foregroundStyle(worktree.isMissing ? Palette.textMuted : Palette.text)
                     .strikethrough(worktree.isMissing)
                     .lineLimit(1)
+                    // The name keeps its room; the path gives way first.
+                    .layoutPriority(1)
                 if worktree.isMain {
-                    Tag("main", color: .secondary)
+                    Tag("main")
                 }
                 if let detached = worktree.detachedAt {
-                    Tag("detached \(detached)", color: .orange)
+                    // The commit is in the tooltip: the tag stays short so the name keeps its room.
+                    Tag("detached", color: Palette.caution)
+                        .help("Detached at \(detached)")
                 }
                 if worktree.isMissing {
-                    Tag("missing", color: .red)
+                    Tag("missing", color: Palette.danger)
                 }
                 Text(displayPath(worktree))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .font(.dsMonoSmall)
+                    .foregroundStyle(quiet)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .layoutPriority(-1)
@@ -295,7 +333,7 @@ struct PairRow: View {
             }
         }
         .help(pair.worktree?.path ?? "")
-        .cellFrame()
+        .frame(height: Metric.row)
         .contextMenu {
             if let worktree = pair.worktree {
                 PathActions(path: worktree.path)
@@ -316,6 +354,8 @@ struct PairRow: View {
 private struct SyncStatus: View {
     let repo: Repo
     let branch: String
+    /// The colour for marks that aren't actions, from the row.
+    let quiet: Color
     @Environment(ScanModel.self) private var model
 
     var body: some View {
@@ -323,19 +363,20 @@ private struct SyncStatus: View {
         let operation = model.running[repo.url]
         HStack(spacing: 4) {
             if operation == .pull(branch: branch) || operation == .push(branch: branch) {
-                ProgressView().controlSize(.mini)
+                Spinner(size: 10)
             } else if let status {
                 if status.isGone {
                     localLabel.help("Local only: \(status.upstreamName) was deleted on the remote")
                 } else if status.ahead == 0 && status.behind == 0 {
                     Image(systemName: "checkmark")
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.quaternary)
+                        .foregroundStyle(quiet)
                         .help("Up to date with \(status.upstreamName)")
+                        .accessibilityLabel("Up to date")
                 } else {
                     let diverged = status.isDiverged
                     if status.behind > 0 {
-                        SyncPill(symbol: "arrow.down", count: status.behind, color: diverged ? .orange : .blue) {
+                        SyncPill(symbol: "arrow.down", count: status.behind, color: diverged ? Palette.caution : Palette.accent) {
                             model.pull(repo, branch: branch)
                         }
                         .disabled(diverged || operation != nil)
@@ -343,7 +384,7 @@ private struct SyncStatus: View {
                     }
                     if status.ahead > 0 {
                         let pushable = status.canPush(branch)
-                        SyncPill(symbol: "arrow.up", count: status.ahead, color: diverged || !pushable ? .orange : .green) {
+                        SyncPill(symbol: "arrow.up", count: status.ahead, color: diverged || !pushable ? Palette.caution : Palette.positive) {
                             model.push(repo, branch: branch)
                         }
                         .disabled(diverged || !pushable || operation != nil)
@@ -361,8 +402,8 @@ private struct SyncStatus: View {
 
     private var localLabel: some View {
         Text("local")
-            .font(.system(size: 10))
-            .foregroundStyle(.quaternary)
+            .font(.dsCaption)
+            .foregroundStyle(quiet)
     }
 
     private func divergedHelp(_ status: BranchStatus) -> String {
@@ -376,9 +417,9 @@ struct SyncCount: View {
     let color: Color
 
     var body: some View {
-        HStack(spacing: 1) {
-            Image(systemName: symbol).font(.system(size: 9, weight: .bold))
-            Text("\(count)").font(.system(size: 11, weight: .semibold).monospacedDigit())
+        HStack(spacing: 2) {
+            Image(systemName: symbol).font(.system(size: 8, weight: .bold))
+            Text("\(count)").font(.dsMonoSmallMedium)
         }
         .foregroundStyle(color)
     }
@@ -393,34 +434,40 @@ struct SyncPill: View {
     var body: some View {
         Button(action: action) { SyncCount(symbol: symbol, count: count, color: color) }
             .buttonStyle(PillButtonStyle(color: color))
+            .accessibilityLabel("\(symbol == "arrow.down" ? "Pull" : "Push") \(count)")
     }
 }
 
 /// Feedback lands on press, not release.
 struct PillButtonStyle: ButtonStyle {
     let color: Color
-    @Environment(\.isEnabled) private var isEnabled
-    @State private var isHovered = false
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .padding(.horizontal, 5)
-            .frame(height: 16)
-            .background(
-                color.opacity(configuration.isPressed ? 0.3 : isHovered && isEnabled ? 0.2 : 0.1),
-                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
-            )
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
-            .opacity(isEnabled ? 1 : 0.6)
-            .onHover { isHovered = $0 }
+        Face(configuration: configuration, color: color)
     }
-}
 
-private extension View {
-    /// The padding and height every cell shares.
-    func cellFrame() -> some View {
-        padding(.horizontal, 4).frame(height: 20)
+    private struct Face: View {
+        let configuration: Configuration
+        let color: Color
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var isHovered = false
+
+        var body: some View {
+            configuration.label
+                .padding(.horizontal, 6)
+                .frame(height: 18)
+                .background(
+                    color.opacity(configuration.isPressed ? 0.26 : isHovered && isEnabled ? Palette.tintHover : Palette.tint),
+                    in: RoundedRectangle(cornerRadius: Metric.radiusSmall, style: .continuous)
+                )
+                // The pill is 18pt tall; its target is the row's 24pt.
+                .frame(height: Metric.controlSmall)
+                .contentShape(Rectangle())
+                .scaleEffect(configuration.isPressed ? 0.95 : 1)
+                .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
+                .opacity(isEnabled ? 1 : 0.6)
+                .onHover { isHovered = $0 }
+        }
     }
 }
 
@@ -435,35 +482,14 @@ private struct DeleteSlot: View {
         ZStack {
             if let item {
                 if model.running[item.repo] == operation {
-                    ProgressView().controlSize(.mini)
+                    Spinner(size: 10)
                 } else if isVisible {
-                    Button { model.requestDeletion([item]) } label: {
-                        Image(systemName: "trash").font(.system(size: 10))
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .disabled(model.running[item.repo] != nil)
-                    .help("Delete…")
+                    IconButton(symbol: "trash", help: "Delete…", size: 11) { model.requestDeletion([item]) }
+                        .disabled(model.running[item.repo] != nil)
                 }
             }
         }
-        .frame(width: 16)
-    }
-}
-
-private struct Tag: View {
-    let text: String
-    let color: Color
-    init(_ text: String, color: Color) { self.text = text; self.color = color }
-
-    var body: some View {
-        Text(text)
-            .font(.system(size: 10, weight: .medium).monospaced())
-            .foregroundStyle(color)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 1)
-            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
-            .fixedSize()
+        .frame(width: Metric.controlSmall, height: Metric.controlSmall)
     }
 }
 

@@ -1,6 +1,6 @@
 # GitSpect
 
-A native macOS app for keeping an eye on all your local git repositories at once: which branches
+A macOS app for keeping an eye on all your local git repositories at once: which branches
 are behind or ahead, which worktrees exist, and what can be cleaned up.
 
 - **Every repo in one place.** Add the folders where you keep code; GitSpect finds the repositories
@@ -49,7 +49,12 @@ open GitSpect.app
 |---|---|
 | `./make-app.sh` | Build `GitSpect.app` for this Mac. `ARCHS="arm64 x86_64"` builds a universal app. |
 | `swift build` | Compile only. |
-| `scripts/make-icon.swift` | Draws the app icons. Delete `Assets/` and run `./make-app.sh` to regenerate them. |
+| `scripts/make-icon.swift` | Draws the app icons. Delete the icons in `Assets/` and run `./make-app.sh` to regenerate them. |
+| `GITSPECT_SNAPSHOT=out.png swift run` | Debug builds only: writes a picture of the window a few seconds after launch, then quits. |
+
+The interface is GitSpect's own. `Sources/GitSpect/DesignSystem.swift` holds every colour, size,
+font and control the views use, and `WindowChrome.swift` replaces the title bar. The fonts in
+`Assets/Fonts` are [Geist](https://github.com/vercel/geist-font), under the SIL Open Font License.
 
 The app version comes from the latest `vX.Y.Z` git tag, and the build number is the commit count.
 
